@@ -34,7 +34,10 @@ verify() {
         || { say "core-sconfig not at /usr/local/sbin/core-sconfig"; rc=1; }
 
     say "base tools (incl. bats for unit tests) present"
-    out=$(ssh_vm 'for c in nft chronyd dig whiptail bats; do printf "%s " "$c"; command -v "$c" || echo MISSING; done' 2>&1 || true)
+    # nft and chronyd live in /usr/sbin which isn't in a non-root user's
+    # default PATH on Debian. Use sudo + a login shell so the check sees
+    # the same PATH operators see when actually running these tools.
+    out=$(ssh_vm 'sudo bash -lc "for c in nft chronyd dig whiptail bats; do printf \"%s \" \"\$c\"; command -v \"\$c\" || echo MISSING; done"' 2>&1 || true)
     echo "$out"
     grep -q MISSING <<< "$out" && rc=1
 
