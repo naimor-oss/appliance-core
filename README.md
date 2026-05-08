@@ -48,8 +48,39 @@ so a deployed product appliance has no runtime dependency on
 
 ## Status
 
-**Phase 1 (skeleton).** Repo bootstrapped from
-`dev-commons/template-appliance-virtualized`. `lib/VERSION=0.1.0`,
-no libs landed yet. The migration plan in the design doc tracks
-which lib comes next; current target is `lib/detect-net.sh` per
-ADR 0002 §5.
+**Phase 2 validated end-to-end (2026-05-08).**
+
+What's in this repo at `lib/VERSION=0.1.0`:
+
+- `lib/detect-net.sh` — read-only network-environment detection.
+  Two-function public surface (`appcore_detect_net_init`,
+  `appcore_detect_net_write_cache`). Cache-fallback semantics
+  that fix the stale-PTR regression class. Contract in
+  [`docs/lib-detect-net.md`](docs/lib-detect-net.md).
+- `tests/unit/detect-net.bats` — 9 cases (happy path, no-route,
+  PTR timeout, single-label PTR, DHCP-domain edges, cache
+  fallback, live override, write/read round-trip). Runs on the
+  Mac orchestrator (`bats tests/unit/`) and on the appliance
+  itself; **9/9 green in both**.
+- `prepare-image.sh` — vendors the libs to
+  `/usr/local/lib/appliance-core/`, writes
+  `/etc/appliance-core.provenance` (SemVer + git commit hash),
+  installs base tools incl. `bats`, ships an inactive nftables
+  baseline, leaves operator-facing surfaces neutral.
+- `lab/build-fresh-base.sh -f` — produces a `deploy-master`
+  snapshot. End-to-end build runs in ~3 min.
+- `lab/scenarios/smoke-prepared-image.sh` — validates lib
+  vendoring, provenance, installed tools, no-bake-in posture,
+  no-leak posture. Currently 8/8 green against the validating
+  deploy-master.
+
+**Deferred (no `golden-image` yet)**: `core-firstboot.service`
+that wires the lib into a one-shot oneshot at first boot,
+and the TTY1 console wizard. Until those land,
+`build-fresh-base.sh` defaults to stop-after-deploy-master;
+pass `--with-firstboot` when the service exists.
+
+**Next libs in migration order** (per ADR 0002 §5):
+`hostname.sh` (the live regression operators are still seeing),
+then `apt-helpers.sh`. After both land, the two product
+appliances migrate to consume them.
