@@ -41,7 +41,7 @@ was prepared — recorded by each consumer into
 | `tui.sh` | landed v0.3.0 — 16/17 unit tests green (1 skipped on macOS) | [`../docs/lib-tui.md`](../docs/lib-tui.md) |
 | `hostname.sh` | landed v0.4.0 — 14/14 unit tests green (depends on identity + tui) | [`../docs/lib-hostname.md`](../docs/lib-hostname.md) |
 | `apt-helpers.sh` | landed v0.5.0 — 11/11 unit tests green (2 skipped on Mac) | [`../docs/lib-apt-helpers.md`](../docs/lib-apt-helpers.md) |
-| `netconfig.sh` | future | — |
+| `netconfig.sh` | landed v0.6.0 — 17/17 unit tests green | [`../docs/lib-netconfig.md`](../docs/lib-netconfig.md) |
 | `console-wizard.sh` | future | — |
 | `motd.sh` | future | — |
 
