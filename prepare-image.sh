@@ -259,6 +259,14 @@ install -m 0644 "$LIB_SRC"/*.sh "$LIB_TARGET/"
 install -m 0644 "$LIB_SRC/VERSION" "$LIB_TARGET/VERSION"
 install -m 0644 "$LIB_SRC/README.md" "$LIB_TARGET/README.md"
 
+# Hard check: at least the first lib must have been copied. Cheap
+# insurance against an empty-glob silent no-op (e.g. if $LIB_SRC is
+# pointing at a directory that does not actually contain *.sh).
+if [[ ! -f "$LIB_TARGET/detect-net.sh" ]]; then
+    err "vendoring produced no detect-net.sh under $LIB_TARGET"
+    exit 1
+fi
+
 # Smoke-test that each lib at least sources cleanly (catches a corrupt
 # copy at prep time rather than at first-boot wizard render time).
 for libfile in "$LIB_TARGET"/*.sh; do
@@ -278,14 +286,15 @@ log "  vendored libs syntax-check passed: $(ls "$LIB_TARGET"/*.sh)"
 # §"Versioning + identity".
 PROV_FILE=/etc/appliance-core.provenance
 log "Writing $PROV_FILE ..."
+# The commit hash is identity-of-the-source-tree, so it must be computed
+# WHERE THE SOURCE TREE LIVES — i.e. on the Mac during build, before the
+# tree is scp'd to the VM. Build pipeline passes it as $APPCORE_BUILD_COMMIT.
+# Adding `git` to the appliance just to hash a tree that isn't there
+# would be incidental complexity.
+PROV_COMMIT="${APPCORE_BUILD_COMMIT:-unknown}"
 {
     printf 'appliance-core-version=%s\n' "$(<"$LIB_TARGET/VERSION")"
-    if commit=$(git -C "$LIB_SRC/.." rev-parse HEAD 2>/dev/null) \
-        || commit=$(git -C "$SCRIPT_DIR" rev-parse HEAD 2>/dev/null); then
-        printf 'appliance-core-commit=%s\n' "$commit"
-    else
-        printf 'appliance-core-commit=unknown\n'
-    fi
+    printf 'appliance-core-commit=%s\n' "$PROV_COMMIT"
     printf 'image-built-at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     printf 'image-built-on=%s\n' "$(uname -srm)"
 } > "$PROV_FILE"

@@ -162,7 +162,16 @@ scp -J "${HV_USER}@${HV_HOST}" -r \
     "${VM_USER}@${VM_IP}:/tmp/"
 
 step "6. run prepare-image.sh on $VM_NAME"
-ssh_vm 'sudo bash /tmp/prepare-image.sh'
+# Compute the source-tree commit hash on the Mac and pass through. The
+# appliance image doesn't carry git; this is the only correct way to
+# record build provenance. See prepare-image.sh §12.
+APPCORE_BUILD_COMMIT="$(git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null || echo unknown)"
+say "  appliance-core source commit: $APPCORE_BUILD_COMMIT"
+if ! ssh_vm "sudo APPCORE_BUILD_COMMIT='$APPCORE_BUILD_COMMIT' bash /tmp/prepare-image.sh"; then
+    say "prepare-image.sh failed; tail of /var/log/appliance-core-prepare.log:"
+    ssh_vm 'sudo tail -30 /var/log/appliance-core-prepare.log 2>/dev/null || echo "(no log)"'
+    exit 1
+fi
 
 step "7. shutdown for deploy-master snapshot"
 # This is the host-agnostic master: prepare-image.sh has finished, but

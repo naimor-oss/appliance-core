@@ -49,6 +49,11 @@ verify() {
     fi
 
     say "operator-facing surfaces don't leak 'appliance-core'"
+    # Scope is intentionally narrow: /etc/motd, /etc/issue*. The
+    # provenance file at /etc/appliance-core.provenance contains the
+    # literal string by design (builder-facing identity), and it MUST
+    # NOT be added to this grep — widening to /etc/* would produce a
+    # false positive for that file.
     out=$(ssh_vm 'sudo grep -l "appliance-core" /etc/motd /etc/issue* 2>/dev/null || true' 2>&1 || true)
     if [[ -n "$out" ]]; then
         say "operator-facing string leak: $out"
