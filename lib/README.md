@@ -36,11 +36,28 @@ was prepared — recorded by each consumer into
 
 | Lib | Status | Contract |
 | --- | --- | --- |
-| `detect-net.sh` | not landed (Phase 2) | [`../docs/lib-detect-net.md`](../docs/lib-detect-net.md) (TBD) |
-| `hostname.sh` | not landed (Phase 5) | [`../docs/lib-hostname.md`](../docs/lib-hostname.md) (TBD) |
-| `apt-helpers.sh` | not landed (Phase 7) | [`../docs/lib-apt-helpers.md`](../docs/lib-apt-helpers.md) (TBD) |
+| `detect-net.sh` | landed v0.1.0 — 9/9 unit tests green | [`../docs/lib-detect-net.md`](../docs/lib-detect-net.md) |
+| `hostname.sh` | not landed (Phase 5) | (TBD at `../docs/lib-hostname.md`) |
+| `apt-helpers.sh` | not landed (Phase 7) | (TBD at `../docs/lib-apt-helpers.md`) |
 | `netconfig.sh` | future | — |
 | `console-wizard.sh` | future | — |
 | `motd.sh` | future | — |
 
 The phase numbers refer to the migration plan in the design doc.
+
+## Running unit tests
+
+The bats test suite uses `PATH`-shadowed mocks for `ip`,
+`resolvectl`, `dig` and `timeout`, so it runs anywhere bash + bats
+do — including the Mac orchestrator (mac default bash 3.2 is
+sufficient for the lib's features). Iterate locally on the Mac
+and only round-trip through the blank-appliance lab when you want
+to confirm the same behavior on the real bash 5+.
+
+```bash
+# On the Mac (homebrew bats-core):
+bats tests/unit/
+
+# On the appliance via the lab harness (Phase 2b lands the wiring):
+lab/run-scenario.sh unit-tests
+```
