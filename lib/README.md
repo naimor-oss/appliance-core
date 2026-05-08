@@ -37,7 +37,9 @@ was prepared — recorded by each consumer into
 | Lib | Status | Contract |
 | --- | --- | --- |
 | `detect-net.sh` | landed v0.1.0 — 9/9 unit tests green | [`../docs/lib-detect-net.md`](../docs/lib-detect-net.md) |
-| `hostname.sh` | not landed (Phase 5) | (TBD at `../docs/lib-hostname.md`) |
+| `identity.sh` | landed v0.2.0 — 26/26 unit tests green | [`../docs/lib-identity.md`](../docs/lib-identity.md) |
+| `tui.sh` | not landed (Phase 5b) | (TBD at `../docs/lib-tui.md`) |
+| `hostname.sh` | not landed (Phase 5c — depends on identity + tui) | (TBD at `../docs/lib-hostname.md`) |
 | `apt-helpers.sh` | not landed (Phase 7) | (TBD at `../docs/lib-apt-helpers.md`) |
 | `netconfig.sh` | future | — |
 | `console-wizard.sh` | future | — |
