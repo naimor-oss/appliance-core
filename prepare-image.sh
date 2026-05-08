@@ -259,13 +259,17 @@ install -m 0644 "$LIB_SRC"/*.sh "$LIB_TARGET/"
 install -m 0644 "$LIB_SRC/VERSION" "$LIB_TARGET/VERSION"
 install -m 0644 "$LIB_SRC/README.md" "$LIB_TARGET/README.md"
 
-# Hard check: at least the first lib must have been copied. Cheap
-# insurance against an empty-glob silent no-op (e.g. if $LIB_SRC is
-# pointing at a directory that does not actually contain *.sh).
-if [[ ! -f "$LIB_TARGET/detect-net.sh" ]]; then
-    err "vendoring produced no detect-net.sh under $LIB_TARGET"
+# Hard check: every lib that's in the source tree must have made it to
+# the image. Cheap insurance against an empty-glob silent no-op or a
+# partially-failed install. Any new lib added under lib/ is picked up
+# automatically by counting source files.
+src_count=$(ls -1 "$LIB_SRC"/*.sh 2>/dev/null | wc -l)
+dst_count=$(ls -1 "$LIB_TARGET"/*.sh 2>/dev/null | wc -l)
+if (( src_count == 0 || src_count != dst_count )); then
+    err "vendoring count mismatch: source has $src_count, target has $dst_count"
     exit 1
 fi
+log "  vendored $dst_count lib(s) into $LIB_TARGET"
 
 # Smoke-test that each lib at least sources cleanly (catches a corrupt
 # copy at prep time rather than at first-boot wizard render time).
