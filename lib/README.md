@@ -40,7 +40,7 @@ was prepared — recorded by each consumer into
 | `identity.sh` | landed v0.2.0 — 26/26 unit tests green | [`../docs/lib-identity.md`](../docs/lib-identity.md) |
 | `tui.sh` | landed v0.3.0 — 16/17 unit tests green (1 skipped on macOS) | [`../docs/lib-tui.md`](../docs/lib-tui.md) |
 | `hostname.sh` | landed v0.4.0 — 14/14 unit tests green (depends on identity + tui) | [`../docs/lib-hostname.md`](../docs/lib-hostname.md) |
-| `apt-helpers.sh` | not landed (Phase 7) | (TBD at `../docs/lib-apt-helpers.md`) |
+| `apt-helpers.sh` | landed v0.5.0 — 11/11 unit tests green (2 skipped on Mac) | [`../docs/lib-apt-helpers.md`](../docs/lib-apt-helpers.md) |
 | `netconfig.sh` | future | — |
 | `console-wizard.sh` | future | — |
 | `motd.sh` | future | — |
