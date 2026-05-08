@@ -149,11 +149,15 @@ EOF
     if ! command -v script >/dev/null 2>&1; then
         skip "script(1) not installed"
     fi
-    path=$(appcore_tui_capture_pty 200 60 bash -c 'tput cols')
+    # Use `stty size` rather than `tput cols`. stty reads the PTY
+    # dimensions directly and works even when $TERM isn't set —
+    # which is the normal case inside a captured non-interactive
+    # PTY (TERM doesn't propagate through SSH non-tty sessions).
+    path=$(appcore_tui_capture_pty 200 60 bash -c 'stty size')
     out=$(<"$path")
-    # script wraps in a PTY which emits CR/LF; strip CRs.
-    cols=$(printf '%s' "$out" | tr -d '\r' | head -1)
-    [ "$cols" = "200" ]
+    # `stty size` prints "rows cols". Strip CRs that script emits.
+    out=$(printf '%s' "$out" | tr -d '\r' | head -1)
+    [[ "$out" == *" 200" ]]
     rm -f "$path" "${path}.rc"
 }
 

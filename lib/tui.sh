@@ -110,7 +110,15 @@ appcore_tui_capture_pty() {
         # PTY sets its dimensions BEFORE the wrapped command starts so
         # the tool sees the wide TTY.
         # `-e` propagates the wrapped command's exit code.
-        script -q -e -c "stty rows ${rows} cols ${cols}; $*" /dev/null \
+        #
+        # `printf %q` to shell-escape each argument before joining —
+        # bare `$*` would let the shell-inside-script re-parse the
+        # arguments, losing quoting (e.g. `bash -c "stty size"` would
+        # turn into `bash -c stty size`, with `size` as $0 rather than
+        # part of the snippet).
+        local cmdstr
+        printf -v cmdstr '%q ' "$@"
+        script -q -e -c "stty rows ${rows} cols ${cols}; ${cmdstr}" /dev/null \
             > "$out" 2>&1
         local rc=$?
         printf '%d' "$rc" > "${out}.rc"
