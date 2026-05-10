@@ -222,6 +222,7 @@ appcore_id_unc_validate() {
     _appcore_id_unc_share_valid "$share" || return 1
     if [[ -n "$subpath" ]]; then
         # Each subpath component must satisfy the share rules.
+        # shellcheck disable=SC2141  # $'\\' IS the literal backslash UNC separator we split on
         local IFS=$'\\'
         local parts=() p
         read -r -a parts <<< "$subpath"
@@ -263,6 +264,7 @@ appcore_id_unc_compose() {
         subpath="${subpath#\\}"
         subpath="${subpath%\\}"
         [[ "$subpath" == *\\\\* ]] && return 1
+        # shellcheck disable=SC2141  # $'\\' IS the literal backslash UNC separator we split on
         local IFS=$'\\'
         local parts=() p
         read -r -a parts <<< "$subpath"
