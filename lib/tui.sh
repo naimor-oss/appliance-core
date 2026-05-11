@@ -182,6 +182,135 @@ appcore_tui_show_pty_output() {
     appcore_tui_show_capture "$title" "$path"
 }
 
+# ----- sized whiptail wrappers (replace hand-fixed 12x64 dialogs) ------------
+#
+# These three are the workhorses every per-script `info()` / `yesno()` /
+# `die()` wrapper should delegate to. The hand-fixed dimensions in the
+# old wrappers (`whiptail --msgbox "$*" 12 64`) clip on wide content
+# and look starved on a 132-col terminal. These auto-size via
+# appcore_tui_size, also taking explicit overrides when a caller knows
+# the content is small/specific.
+#
+# All three preserve whiptail's `\n` interpretation, `--title`
+# customization, and exit-code semantics. They differ from the raw
+# whiptail calls only in dimension management.
+
+# Internal: compute (rows, cols) for a simple dialog. Floors at
+# 10x60 — small enough not to overwhelm a "hostname OK" confirm —
+# while obeying the terminal-wide ceiling from appcore_tui_size.
+#
+# Args:
+#   $1  caller-supplied rows OR empty to auto-size
+#   $2  caller-supplied cols OR empty to auto-size
+#   $3  minimum rows  (default 10)
+#   $4  minimum cols  (default 60)
+_appcore_tui_dialog_size() {
+    local want_rows="${1:-}" want_cols="${2:-}"
+    local min_rows="${3:-10}" min_cols="${4:-60}"
+    if [[ -n "$want_rows" && -n "$want_cols" ]]; then
+        printf '%d %d\n' "$want_rows" "$want_cols"
+        return 0
+    fi
+    # Inline the size calc rather than delegating to appcore_tui_size:
+    # that function floors at 18x60 because show_capture needs vertical
+    # room for long captures. A 10-row "Saved." confirm shouldn't be
+    # forced to 18 rows tall on a 24-row console.
+    local rows cols
+    rows=$(tput lines 2>/dev/null || echo 24)
+    cols=$(tput cols  2>/dev/null || echo 80)
+    rows=$(( rows - 4 ))   # margin
+    cols=$(( cols - 4 ))   # margin
+    # Cap above; simple dialogs look starved when full-size.
+    (( rows > 24 )) && rows=24
+    (( cols > 100 )) && cols=100
+    # Floor below.
+    (( rows < min_rows )) && rows=$min_rows
+    (( cols < min_cols )) && cols=$min_cols
+    printf '%d %d\n' "$rows" "$cols"
+}
+
+# Show a sized msgbox. Accepts an optional title and explicit rows/cols.
+# `body` may contain literal '\n' which whiptail interprets.
+#
+# Usage:
+#   appcore_tui_msgbox "Hello world"
+#   appcore_tui_msgbox --title "Confirm" "Saved."
+#   appcore_tui_msgbox --rows 14 --cols 80 "$multi_line_body"
+appcore_tui_msgbox() {
+    local title="" rows="" cols=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --title) title="$2"; shift 2 ;;
+            --rows)  rows="$2";  shift 2 ;;
+            --cols)  cols="$2";  shift 2 ;;
+            --)      shift; break ;;
+            *)       break ;;
+        esac
+    done
+    local body="${1-}"
+    local r c
+    read -r r c < <(_appcore_tui_dialog_size "$rows" "$cols")
+    if [[ -n "$title" ]]; then
+        whiptail --title "$title" --msgbox "$body" "$r" "$c"
+    else
+        whiptail --msgbox "$body" "$r" "$c"
+    fi
+}
+
+# Sized yes/no prompt. Returns whiptail's exit code (0 = yes, 1 = no,
+# 255 = ESC). Same flag surface as _msgbox.
+#
+# Usage:
+#   if appcore_tui_yesno "Apply?"; then ...
+#   appcore_tui_yesno --title "Reboot" "Reboot now?"
+appcore_tui_yesno() {
+    local title="" rows="" cols=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --title) title="$2"; shift 2 ;;
+            --rows)  rows="$2";  shift 2 ;;
+            --cols)  cols="$2";  shift 2 ;;
+            --)      shift; break ;;
+            *)       break ;;
+        esac
+    done
+    local body="${1-}"
+    local r c
+    read -r r c < <(_appcore_tui_dialog_size "$rows" "$cols")
+    if [[ -n "$title" ]]; then
+        whiptail --title "$title" --yesno "$body" "$r" "$c"
+    else
+        whiptail --yesno "$body" "$r" "$c"
+    fi
+}
+
+# Sized inputbox. Prints the operator's input on stdout, or empty +
+# rc!=0 on Cancel. For validated input, see appcore_tui_prompt_validated.
+#
+# Usage:
+#   v=$(appcore_tui_inputbox --title "Realm" --default "lab.test" "DNS realm:") || return
+appcore_tui_inputbox() {
+    local title="" rows="" cols="" default=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --title)   title="$2";   shift 2 ;;
+            --rows)    rows="$2";    shift 2 ;;
+            --cols)    cols="$2";    shift 2 ;;
+            --default) default="$2"; shift 2 ;;
+            --)        shift; break ;;
+            *)         break ;;
+        esac
+    done
+    local body="${1-}"
+    local r c
+    read -r r c < <(_appcore_tui_dialog_size "$rows" "$cols")
+    if [[ -n "$title" ]]; then
+        whiptail --title "$title" --inputbox "$body" "$r" "$c" "$default" 3>&1 1>&2 2>&3
+    else
+        whiptail --inputbox "$body" "$r" "$c" "$default" 3>&1 1>&2 2>&3
+    fi
+}
+
 # Validated-input prompt. Calls whiptail --inputbox in a loop,
 # delegating validation to the named function (any callable name in
 # scope). On invalid input, shows a brief error from the validator's

@@ -38,7 +38,7 @@ was prepared — recorded by each consumer into
 | --- | --- | --- |
 | `detect-net.sh` | landed v0.1.0 — 9/9 unit tests green | [`../docs/lib-detect-net.md`](../docs/lib-detect-net.md) |
 | `identity.sh` | landed v0.7.0 — 56/56 unit tests green (added domgroup family for DOMAIN\\Group with spaces, escapes, quotes) | [`../docs/lib-identity.md`](../docs/lib-identity.md) |
-| `tui.sh` | landed v0.3.0 — 16/17 unit tests green (1 skipped on macOS) | [`../docs/lib-tui.md`](../docs/lib-tui.md) |
+| `tui.sh` | landed v0.9.0 — 27/28 unit tests green (1 skipped on macOS; added msgbox/yesno/inputbox sized wrappers) | [`../docs/lib-tui.md`](../docs/lib-tui.md) |
 | `hostname.sh` | landed v0.8.0 — 21/21 unit tests green (depends on identity + tui; added align_to_realm for post-join /etc/hosts re-write) | [`../docs/lib-hostname.md`](../docs/lib-hostname.md) |
 | `apt-helpers.sh` | landed v0.5.0 — 11/11 unit tests green (2 skipped on Mac) | [`../docs/lib-apt-helpers.md`](../docs/lib-apt-helpers.md) |
 | `netconfig.sh` | landed v0.6.0 — 17/17 unit tests green | [`../docs/lib-netconfig.md`](../docs/lib-netconfig.md) |

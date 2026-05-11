@@ -259,6 +259,126 @@ EOF
 }
 
 # ============================================================================
+# msgbox / yesno / inputbox — sized whiptail wrappers
+# ============================================================================
+
+@test "msgbox: sizes to terminal (full-flag form)" {
+    fake_tput 30 120     # 26x116 after default 4x4 margin → capped at 24x100
+    recordfile=$(mktemp)
+    fake_whiptail "$recordfile"
+    appcore_tui_msgbox --title "Hello" "Body text"
+    cat "$recordfile"
+    grep -qFx -e '--title' "$recordfile"
+    grep -qx "Hello"   "$recordfile"
+    grep -qFx -e '--msgbox' "$recordfile"
+    grep -qx "Body text" "$recordfile"
+    # rows/cols are the last two argv entries.
+    [ "$(tail -2 "$recordfile" | head -1)" = "24" ]
+    [ "$(tail -1 "$recordfile")"           = "100" ]
+}
+
+@test "msgbox: explicit --rows/--cols override autosize" {
+    fake_tput 60 200
+    recordfile=$(mktemp)
+    fake_whiptail "$recordfile"
+    appcore_tui_msgbox --rows 12 --cols 70 "Pinned"
+    grep -qx "12" "$recordfile"
+    grep -qx "70" "$recordfile"
+}
+
+@test "msgbox: small terminal floors at 10x60" {
+    fake_tput 14 50   # 10x46 after margin → floored at 10x60
+    recordfile=$(mktemp)
+    fake_whiptail "$recordfile"
+    appcore_tui_msgbox "small"
+    [ "$(tail -2 "$recordfile" | head -1)" = "10" ]
+    [ "$(tail -1 "$recordfile")"           = "60" ]
+}
+
+@test "msgbox: title is optional" {
+    fake_tput 30 100
+    recordfile=$(mktemp)
+    fake_whiptail "$recordfile"
+    appcore_tui_msgbox "No title"
+    # No --title entry recorded.
+    ! grep -qFx -e '--title' "$recordfile"
+    grep -qFx -e '--msgbox' "$recordfile"
+    grep -qx "No title" "$recordfile"
+}
+
+@test "msgbox: body with literal \\n is preserved" {
+    fake_tput 30 100
+    recordfile=$(mktemp)
+    fake_whiptail "$recordfile"
+    appcore_tui_msgbox $'Line one\nLine two'
+    # Body still one argument; whiptail interprets the literal newline.
+    grep -qx "Line one" "$recordfile" && grep -qx "Line two" "$recordfile"
+}
+
+@test "yesno: sizes to terminal and uses --yesno" {
+    fake_tput 30 120
+    recordfile=$(mktemp)
+    fake_whiptail "$recordfile"
+    appcore_tui_yesno --title "Confirm" "Apply?"
+    grep -qFx -e '--yesno' "$recordfile"
+    grep -qx "Apply?"  "$recordfile"
+}
+
+@test "yesno: returns whiptail's exit code" {
+    # whiptail mock that exits 1 (No).
+    cat > "${FAKEBIN}/whiptail" <<'EOF'
+#!/usr/bin/env bash
+exit 1
+EOF
+    chmod +x "${FAKEBIN}/whiptail"
+    fake_tput 30 100
+    if appcore_tui_yesno "Decline"; then
+        false
+    fi
+}
+
+@test "inputbox: returns input on stdout, uses default" {
+    # whiptail mock that always echoes "the-answer" to fd 3 (whiptail
+    # convention). The wrapper redirects 3>&1 1>&2 2>&3, so writing to
+    # stderr in the mock surfaces on stdout to the caller.
+    cat > "${FAKEBIN}/whiptail" <<'EOF'
+#!/usr/bin/env bash
+echo "the-answer" >&2
+exit 0
+EOF
+    chmod +x "${FAKEBIN}/whiptail"
+    fake_tput 30 100
+    result=$(appcore_tui_inputbox --title "Realm" --default "lab.test" "DNS realm:")
+    [ "$result" = "the-answer" ]
+}
+
+@test "inputbox: cancel returns non-zero" {
+    cat > "${FAKEBIN}/whiptail" <<'EOF'
+#!/usr/bin/env bash
+exit 1
+EOF
+    chmod +x "${FAKEBIN}/whiptail"
+    fake_tput 30 100
+    if appcore_tui_inputbox "Realm:"; then
+        false
+    fi
+}
+
+@test "_dialog_size: caps at 24 rows / 100 cols even on huge terminals" {
+    fake_tput 100 300
+    read -r r c < <(_appcore_tui_dialog_size "" "")
+    [ "$r" -le 24 ]
+    [ "$c" -le 100 ]
+}
+
+@test "_dialog_size: honors explicit rows+cols when both provided" {
+    fake_tput 30 120
+    read -r r c < <(_appcore_tui_dialog_size 18 80)
+    [ "$r" -eq 18 ]
+    [ "$c" -eq 80 ]
+}
+
+# ============================================================================
 # Sentinel guard
 # ============================================================================
 
