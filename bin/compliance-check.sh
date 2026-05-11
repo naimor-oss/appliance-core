@@ -67,6 +67,8 @@ ALL_CHECKS=(
     "C08|/etc/appliance-core.provenance written by prepare-image|build commit hash unknown post-deploy"
     "C09|sourced lab scenarios carry '# shellcheck shell=bash'|sh-mode false positives"
     "C10|no Dfsn-Configuration typo (when DFS-N is referenced)|AD path returns zero results silently"
+    "C11|no info/--msgbox body with 4+ backslashes (use info_text)|whiptail mis-renders \\D, \\a, \\g; clipped dialogs"
+    "C12|no info/--msgbox body with \$() captured output (use info_text/show_capture)|wbinfo/samba-tool output mangled in dialogs"
 )
 
 # ----------------------------------------------------------------------------
@@ -327,6 +329,86 @@ _check_C10_no_dfsn_configuration_typo() {
         return 1
     fi
     return 0
+}
+
+_check_C11_no_msgbox_quad_backslash() {
+    local appdir="$1"
+    # Pattern: `info "...\\\\..."`  or  `whiptail --msgbox "...\\\\..."`.
+    # The source has 4 backslashes (rendered: `\\` after shell parse,
+    # then `\` after whiptail's escape interpretation). This was the
+    # workaround pattern for displaying a single `\` via --msgbox —
+    # fragile (every `\X` after this point in the body is also escape-
+    # interpreted) and breaks the moment captured-output content is
+    # added to the body. Use info_text (→ --textbox, no escape interp)
+    # instead.
+    #
+    # In the grep regex, each `\` matches one source `\`, so we need
+    # 8 backslashes in the grep arg to match 4 in source.
+    local hits
+    hits=$(grep -rnE '(^|[^a-zA-Z_])(info|whiptail [^|]*--msgbox)[^"]*"[^"]*\\\\\\\\' \
+        --include='*.sh' \
+        --exclude-dir=test-results \
+        --exclude-dir=.git \
+        --exclude-dir=dist \
+        "$appdir" 2>/dev/null || true)
+    # Filter out the canonical info_text wrapper fallback shape:
+    #   info "${body//\\/\\\\}"
+    # That's the documented fallback inside info_text() that doubles
+    # `\` for callers that don't have appliance-core vendored. It is
+    # NOT a real over-escape workaround in a user-facing dialog.
+    # grep -F (literal-string match) — escaping `\` in ERE here is
+    # painful and error-prone; -F is unambiguous.
+    hits=$(printf '%s\n' "$hits" \
+        | grep -vF 'info "${body//\\/\\\\}"' \
+        || true)
+    if [[ -z "$hits" ]]; then
+        return 0
+    fi
+    echo "  whiptail --msgbox / info() body uses the '\\\\\\\\' over-escape workaround:"
+    printf '%s\n' "$hits" | sed 's/^/  /'
+    echo "  → migrate to info_text \"<title>\" \"<body with single backslash>\"; --textbox renders verbatim."
+    return 1
+}
+
+_check_C12_no_msgbox_with_captured_output() {
+    local appdir="$1"
+    # Pattern: info / whiptail --msgbox body embeds a $(...) command
+    # substitution. Captured tool output (wbinfo, samba-tool, journalctl,
+    # systemctl status, smbclient, etc.) commonly contains literal
+    # backslashes and ANSI/escape-shaped bytes that whiptail --msgbox
+    # mis-renders as clipping or stray spaces.
+    #
+    # The right primitives are:
+    #   - appcore_tui_show_capture / appcore_tui_show_output / show_pty_output
+    #     for pure captured-output dialogs (lib manages temp file + ANSI)
+    #   - info_text "<title>" "<body with $(...) interpolation>"
+    #     for label+capture mixed bodies
+    # Both route through --textbox and read the body byte-for-byte.
+    #
+    # Filter out a few legitimate patterns:
+    #   - info() / yesno() / die() wrapper DEFINITIONS in source
+    #     (`info() { ... whiptail --msgbox "$*" ... }` — that's the
+    #     wrapper itself, callers pass strings to it).
+    #   - info / die calls with simple $(somefunc) substitutions that
+    #     return short label-shaped strings (get_realm, get_netbios,
+    #     etc.). The capture-output cases we want to flag are the
+    #     external-tool ones; the regex below specifically targets
+    #     samba-tool, wbinfo, journalctl, systemctl, smbclient,
+    #     net ads, testparm, dig, cat, tail — the common offenders.
+    local hits
+    hits=$(grep -rnE '(^|[^a-zA-Z_])(info|whiptail [^|]*--msgbox)[^"]*"[^"]*\$\((samba-tool|wbinfo|journalctl|systemctl |smbclient|net ads|testparm|nft list|cat |tail |head |ls )' \
+        --include='*.sh' \
+        --exclude-dir=test-results \
+        --exclude-dir=.git \
+        --exclude-dir=dist \
+        "$appdir" 2>/dev/null || true)
+    if [[ -z "$hits" ]]; then
+        return 0
+    fi
+    echo "  whiptail --msgbox / info() body embeds captured tool output:"
+    printf '%s\n' "$hits" | sed 's/^/  /'
+    echo "  → use info_text or appcore_tui_show_capture / show_output; --msgbox mangles \\X bytes in the captured text."
+    return 1
 }
 
 # ----------------------------------------------------------------------------

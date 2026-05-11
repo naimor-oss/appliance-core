@@ -256,6 +256,134 @@ EOF
     [[ "$output" == *"FAIL C10"* ]]
 }
 
+@test "C11 fails on info() body with 4+ backslashes (over-escape workaround)" {
+    cat >> "$APPDIR/foo-sconfig.sh" <<'EOF'
+
+# The over-escape workaround pattern: 4 backslashes in source to
+# render 1 in --msgbox. Fragile; should use info_text instead.
+show_path() {
+    info "Network path: \\\\fileserver\\share"
+}
+EOF
+    run_checker
+    echo "$output"
+    [[ "$output" == *"FAIL C11"* ]]
+}
+
+@test "C11 fails on whiptail --msgbox with the over-escape workaround" {
+    cat >> "$APPDIR/foo-sconfig.sh" <<'EOF'
+
+show_status() {
+    whiptail --title T --scrolltext --msgbox "Server: \\\\dc1\\NETLOGON" 12 64
+}
+EOF
+    run_checker
+    echo "$output"
+    [[ "$output" == *"FAIL C11"* ]]
+}
+
+@test "C11 tolerates the info_text wrapper's own fallback line" {
+    # The canonical info_text fallback `info "${body//\\/\\\\}"` IS
+    # the right shape — it doubles backslashes for the --msgbox path
+    # so a body with a SINGLE backslash renders correctly. C11 must
+    # not flag this line.
+    cat >> "$APPDIR/foo-sconfig.sh" <<'EOF'
+
+info_text() {
+    local title="$1" body="$2"
+    if command -v appcore_tui_show_text >/dev/null 2>&1; then
+        appcore_tui_show_text "$title" "$body"
+    else
+        info "${body//\\/\\\\}"
+    fi
+}
+EOF
+    run_checker
+    echo "$output"
+    # Whole-suite pass — the wrapper-fallback line is the only `\\\\`
+    # occurrence and C11's filter must exempt it.
+    [[ "$output" == *"PASS C11"* ]]
+}
+
+@test "C12 fails on info() body embedding samba-tool output" {
+    cat >> "$APPDIR/foo-sconfig.sh" <<'EOF'
+
+show_repl() {
+    info "Replication status:\n$(samba-tool drs showrepl 2>&1)"
+}
+EOF
+    run_checker
+    echo "$output"
+    [[ "$output" == *"FAIL C12"* ]]
+}
+
+@test "C12 fails on info() body embedding wbinfo output" {
+    cat >> "$APPDIR/foo-sconfig.sh" <<'EOF'
+
+show_users() {
+    info "Domain users:\n$(wbinfo -u | head -5)"
+}
+EOF
+    run_checker
+    echo "$output"
+    [[ "$output" == *"FAIL C12"* ]]
+}
+
+@test "C12 fails on info() body embedding journalctl tail" {
+    cat >> "$APPDIR/foo-sconfig.sh" <<'EOF'
+
+show_logs() {
+    info "Last 50 log lines:\n$(journalctl -u samba-ad-dc -n 50 --no-pager)"
+}
+EOF
+    run_checker
+    echo "$output"
+    [[ "$output" == *"FAIL C12"* ]]
+}
+
+@test "C12 fails on whiptail --msgbox with embedded tool capture" {
+    # Note: C12 is line-based grep — the whiptail invocation must be
+    # on a single source line. Multi-line whiptail calls (with `\`
+    # continuation) are a known blind spot; in practice the codebase
+    # writes them on one line.
+    cat >> "$APPDIR/foo-sconfig.sh" <<'EOF'
+
+show_smb() { whiptail --title T --scrolltext --msgbox "SMB shares:\n$(smbclient -L localhost -U% -N 2>&1)" 24 70 ; }
+EOF
+    run_checker
+    echo "$output"
+    [[ "$output" == *"FAIL C12"* ]]
+}
+
+@test "C12 tolerates simple variable interpolation (not captured output)" {
+    # `info "Realm: $realm"` is fine — $realm is a short string, not a
+    # captured tool output. C12 must not flag this.
+    cat >> "$APPDIR/foo-sconfig.sh" <<'EOF'
+
+show_realm() {
+    local realm="LAB.TEST"
+    info "Realm: $realm\nNetBIOS: LAB"
+}
+EOF
+    run_checker
+    echo "$output"
+    [[ "$output" == *"PASS C12"* ]]
+}
+
+@test "C12 tolerates info_text with captured output (the correct primitive)" {
+    # info_text routes via --textbox, which IS safe for captured output.
+    # C12 only flags info / --msgbox (the unsafe primitives).
+    cat >> "$APPDIR/foo-sconfig.sh" <<'EOF'
+
+show_logs() {
+    info_text "Logs" "$(journalctl -u samba-ad-dc -n 50 --no-pager 2>&1)"
+}
+EOF
+    run_checker
+    echo "$output"
+    [[ "$output" == *"PASS C12"* ]]
+}
+
 # ============================================================================
 # Conditional / scoped checks
 # ============================================================================
