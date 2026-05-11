@@ -216,6 +216,84 @@ teardown() {
 }
 
 # ============================================================================
+# SMB share / namespace names — including the trailing-`$` hidden marker
+# ============================================================================
+
+@test "smb_name: accepts plain alphanumeric names" {
+    appcore_id_smb_name_validate "Engineering"
+    appcore_id_smb_name_validate "Public"
+    appcore_id_smb_name_validate "dfs_root"
+    appcore_id_smb_name_validate "a"
+    appcore_id_smb_name_validate "X1"
+}
+
+@test "smb_name: accepts the conventional trailing-\$ hidden marker" {
+    # The exact field-reported case.
+    appcore_id_smb_name_validate 'Engineering$'
+    appcore_id_smb_name_validate 'Public$'
+    appcore_id_smb_name_validate 'Drawings$'
+    appcore_id_smb_name_validate 'one$'
+}
+
+@test "smb_name: accepts dots, dashes, underscores" {
+    appcore_id_smb_name_validate "site.us"
+    appcore_id_smb_name_validate "north-shop"
+    appcore_id_smb_name_validate "Backup_2024"
+    appcore_id_smb_name_validate "v1.2_dev"
+    appcore_id_smb_name_validate 'site.us$'
+}
+
+@test "smb_name: rejects empty and bare \$" {
+    ! appcore_id_smb_name_validate ""
+    ! appcore_id_smb_name_validate '$'
+}
+
+@test "smb_name: rejects multiple or embedded \$ (only trailing allowed)" {
+    ! appcore_id_smb_name_validate 'Engineering$$'
+    ! appcore_id_smb_name_validate 'En$gineering'
+    ! appcore_id_smb_name_validate '$Engineering'
+    ! appcore_id_smb_name_validate 'Eng$ineering$'
+}
+
+@test "smb_name: rejects whitespace" {
+    ! appcore_id_smb_name_validate "Old Files"
+    ! appcore_id_smb_name_validate $'a\tb'
+    ! appcore_id_smb_name_validate 'leading-space '
+    ! appcore_id_smb_name_validate ' leading-space'
+}
+
+@test "smb_name: rejects SMB / NTFS reserved chars and other shell metas" {
+    ! appcore_id_smb_name_validate 'a/b'
+    ! appcore_id_smb_name_validate 'a\b'
+    ! appcore_id_smb_name_validate 'a[b'
+    ! appcore_id_smb_name_validate 'a]b'
+    ! appcore_id_smb_name_validate 'a:b'
+    ! appcore_id_smb_name_validate 'a*b'
+    ! appcore_id_smb_name_validate 'a?b'
+    ! appcore_id_smb_name_validate 'a"b'
+    ! appcore_id_smb_name_validate "a'b"
+    ! appcore_id_smb_name_validate 'a<b'
+    ! appcore_id_smb_name_validate 'a>b'
+    ! appcore_id_smb_name_validate 'a|b'
+    ! appcore_id_smb_name_validate 'a&b'
+    ! appcore_id_smb_name_validate 'a;b'
+    ! appcore_id_smb_name_validate 'a`b'
+}
+
+@test "smb_name: respects 80-char base length cap" {
+    # 80 chars, exactly at the cap — accepted.
+    local n80
+    n80=$(printf 'a%.0s' {1..80})
+    appcore_id_smb_name_validate "$n80"
+    # 81 chars — rejected.
+    local n81="${n80}b"
+    ! appcore_id_smb_name_validate "$n81"
+    # 80 chars + trailing `$` — accepted (stored length 81 is the
+    # documented hidden-marker case).
+    appcore_id_smb_name_validate "${n80}\$"
+}
+
+# ============================================================================
 # DOMAIN\Group — AD group references with spaces, escapes, quotes
 # ============================================================================
 

@@ -278,6 +278,48 @@ appcore_id_unc_compose() {
 }
 
 # ============================================================================
+# SMB share / namespace names
+# ============================================================================
+# A "shareable name" — used for SMB share names, DFS-N namespace names,
+# and anywhere else the appliance publishes a name onto the SMB network.
+# Per Windows convention a trailing `$` marks the name as HIDDEN in
+# network browsing (the operator still sees it on the wire; it just
+# doesn't show in client UI lists). Common in shop floors:
+# `Engineering$`, `Drawings$`, `Public$`.
+#
+# Multiple `$`, a leading `$`, or `$` mid-name are all rejected — the
+# trailing-`$` hidden marker is the documented use; anything else is
+# either a typo or an attempt to smuggle a shell-meta into a name that
+# may later land in a shell context.
+#
+# Accepted character class for everything else:
+#   - letters, digits, dot, underscore, dash
+# Length limit: 80 chars (the same Windows-NetBIOS-derived cap used by
+# _appcore_id_unc_share_valid), allowing the appended `$` to make the
+# stored name 81 in the trailing-marker case.
+#
+# This validator is the SINGLE source of truth used by:
+#   - samba-addc dfs-configure (namespace name)
+#   - samba-addc dfs-init      (share name for the namespace root)
+#   - smb-proxy  share_name_validate (delegated base check; the local
+#                                     wrapper adds fstab-specific rules)
+
+appcore_id_smb_name_validate() {
+    local s="${1:-}"
+    [[ -n "$s" ]] || return 1
+    # Strip the optional trailing `$` (hidden-share marker). If it's
+    # there, the rest must satisfy the base rules; if it's not, the
+    # whole string must satisfy them. EITHER way no `$` can survive
+    # past the strip.
+    local base="${s%\$}"
+    [[ -n "$base" ]] || return 1                # `$` alone is not a name
+    [[ "$base" == *\$* ]] && return 1           # no embedded or duplicated `$`
+    (( ${#base} >= 1 && ${#base} <= 80 )) || return 1
+    [[ "$base" =~ ^[A-Za-z0-9._-]+$ ]] || return 1
+    return 0
+}
+
+# ============================================================================
 # DOMAIN\Group — AD group references in `DOMAIN\Group Name` form
 # ============================================================================
 # AD groups in Samba contexts appear as `<NETBIOS>\<Group Name>` (one
