@@ -13,7 +13,8 @@ teardown() {
     unset APPCORE_IDENTITY_LOADED \
           APPCORE_ID_IPV4_OCTETS APPCORE_ID_IPV4_FIRST APPCORE_ID_IPV4_LAST \
           APPCORE_ID_FQDN_SHORT APPCORE_ID_FQDN_DOMAIN \
-          APPCORE_ID_UNC_SERVER APPCORE_ID_UNC_SHARE APPCORE_ID_UNC_SUBPATH
+          APPCORE_ID_UNC_SERVER APPCORE_ID_UNC_SHARE APPCORE_ID_UNC_SUBPATH \
+          APPCORE_ID_DG_DOMAIN APPCORE_ID_DG_GROUP
 }
 
 # ============================================================================
@@ -212,6 +213,198 @@ teardown() {
     ! appcore_id_unc_compose "srv" ""
     ! appcore_id_unc_compose "srv" "share,evil"
     ! appcore_id_unc_compose "srv" "share" 'sub\\with-empty'   # consecutive \\
+}
+
+# ============================================================================
+# DOMAIN\Group — AD group references with spaces, escapes, quotes
+# ============================================================================
+
+@test "domgroup_validate: accepts canonical DOMAIN\\Group" {
+    appcore_id_domgroup_validate 'NAIMOR\Domain Admins'
+    appcore_id_domgroup_validate 'LAB\Engineering Users'
+    appcore_id_domgroup_validate 'CORP\Single'
+}
+
+@test "domgroup_validate: accepts no-domain group-only form" {
+    appcore_id_domgroup_validate 'Domain Admins'
+    appcore_id_domgroup_validate 'Single'
+}
+
+@test "domgroup_validate: accepts shell-escape form 'DOMAIN\\Group\\ Name'" {
+    # The exact bug input from the field report.
+    appcore_id_domgroup_validate 'NAIMOR\Domain\ Admins'
+}
+
+@test "domgroup_validate: accepts double-backslash form" {
+    appcore_id_domgroup_validate 'NAIMOR\\Domain Admins'
+}
+
+@test "domgroup_validate: accepts quoted-group form" {
+    appcore_id_domgroup_validate 'NAIMOR\"Domain Admins"'
+}
+
+@test "domgroup_validate: tolerates surrounding whitespace" {
+    appcore_id_domgroup_validate '  NAIMOR\Domain Admins  '
+    appcore_id_domgroup_validate $'\tNAIMOR\\Domain Admins\t'
+}
+
+@test "domgroup_validate: rejects empty + meta-only" {
+    ! appcore_id_domgroup_validate ''
+    ! appcore_id_domgroup_validate '   '
+    ! appcore_id_domgroup_validate '\'
+    ! appcore_id_domgroup_validate 'DOMAIN\'
+    ! appcore_id_domgroup_validate '\Group'
+}
+
+@test "domgroup_validate: rejects forbidden characters in group" {
+    # AD/Samba/sudoers do not accept these in a group name.
+    ! appcore_id_domgroup_validate 'NAIMOR\Foo/Bar'
+    ! appcore_id_domgroup_validate 'NAIMOR\Foo[Bar]'
+    ! appcore_id_domgroup_validate 'NAIMOR\Foo:Bar'
+    ! appcore_id_domgroup_validate 'NAIMOR\Foo;Bar'
+    ! appcore_id_domgroup_validate 'NAIMOR\Foo|Bar'
+    ! appcore_id_domgroup_validate 'NAIMOR\Foo=Bar'
+    ! appcore_id_domgroup_validate 'NAIMOR\Foo+Bar'
+    ! appcore_id_domgroup_validate 'NAIMOR\Foo*Bar'
+    ! appcore_id_domgroup_validate 'NAIMOR\Foo?Bar'
+    ! appcore_id_domgroup_validate 'NAIMOR\Foo<Bar>'
+}
+
+@test "domgroup_validate: rejects multiple internal backslashes" {
+    ! appcore_id_domgroup_validate 'A\B\C'
+    ! appcore_id_domgroup_validate 'NAIMOR\Foo\Bar\Baz'
+}
+
+@test "domgroup_validate: rejects leading or trailing space in group" {
+    ! appcore_id_domgroup_validate 'NAIMOR\ Leading'
+    ! appcore_id_domgroup_validate 'NAIMOR\Trailing '
+    ! appcore_id_domgroup_validate 'NAIMOR\  TwoLeading'
+}
+
+@test "domgroup_validate: rejects runs of internal spaces" {
+    ! appcore_id_domgroup_validate 'NAIMOR\Foo  Bar'
+    ! appcore_id_domgroup_validate 'NAIMOR\Foo   Bar'
+}
+
+@test "domgroup_validate: rejects bad domain shape" {
+    ! appcore_id_domgroup_validate '1starts-with-digit\Group'
+    ! appcore_id_domgroup_validate '-leading-hyphen\Group'
+    ! appcore_id_domgroup_validate 'has.dot\Group'
+    ! appcore_id_domgroup_validate 'has space\Group'
+    ! appcore_id_domgroup_validate 'too_long_15chrs_x\Group'   # 17 chars
+}
+
+@test "domgroup_parse: extracts domain + group canonically" {
+    appcore_id_domgroup_parse 'NAIMOR\Domain Admins'
+    [ "$APPCORE_ID_DG_DOMAIN" = "NAIMOR" ]
+    [ "$APPCORE_ID_DG_GROUP" = "Domain Admins" ]
+}
+
+@test "domgroup_parse: shell-escape form unescapes to literal space" {
+    # 'NAIMOR\Domain\ Admins' must NOT yield a group of "Domain\ Admins";
+    # the \ before space is the shell's escape, not part of the name.
+    appcore_id_domgroup_parse 'NAIMOR\Domain\ Admins'
+    [ "$APPCORE_ID_DG_DOMAIN" = "NAIMOR" ]
+    [ "$APPCORE_ID_DG_GROUP" = "Domain Admins" ]
+}
+
+@test "domgroup_parse: double-backslash collapses to one" {
+    appcore_id_domgroup_parse 'NAIMOR\\Domain Admins'
+    [ "$APPCORE_ID_DG_DOMAIN" = "NAIMOR" ]
+    [ "$APPCORE_ID_DG_GROUP" = "Domain Admins" ]
+}
+
+@test "domgroup_parse: quoted group strips quotes" {
+    appcore_id_domgroup_parse 'NAIMOR\"Domain Admins"'
+    [ "$APPCORE_ID_DG_DOMAIN" = "NAIMOR" ]
+    [ "$APPCORE_ID_DG_GROUP" = "Domain Admins" ]
+}
+
+@test "domgroup_parse: no-domain form leaves domain empty" {
+    appcore_id_domgroup_parse 'Domain Admins'
+    [ "$APPCORE_ID_DG_DOMAIN" = "" ]
+    [ "$APPCORE_ID_DG_GROUP" = "Domain Admins" ]
+}
+
+@test "domgroup_normalize: outputs canonical DOMAIN\\Group" {
+    result=$(appcore_id_domgroup_normalize 'NAIMOR\Domain\ Admins')
+    [ "$result" = "NAIMOR\\Domain Admins" ]
+}
+
+@test "domgroup_normalize: collapses double backslash" {
+    result=$(appcore_id_domgroup_normalize 'NAIMOR\\Domain Admins')
+    [ "$result" = "NAIMOR\\Domain Admins" ]
+}
+
+@test "domgroup_normalize: strips quotes" {
+    result=$(appcore_id_domgroup_normalize 'NAIMOR\"Domain Admins"')
+    [ "$result" = "NAIMOR\\Domain Admins" ]
+}
+
+@test "domgroup_normalize: idempotent on canonical input" {
+    canonical="NAIMOR\\Domain Admins"
+    once=$(appcore_id_domgroup_normalize "$canonical")
+    twice=$(appcore_id_domgroup_normalize "$once")
+    [ "$once" = "$twice" ]
+    [ "$once" = "$canonical" ]
+}
+
+@test "domgroup_normalize: no-domain → group only" {
+    result=$(appcore_id_domgroup_normalize 'Domain Admins')
+    [ "$result" = "Domain Admins" ]
+}
+
+@test "domgroup_format_smb: emits single-backslash, literal-space form" {
+    result=$(appcore_id_domgroup_format_smb 'NAIMOR' 'Domain Admins')
+    [ "$result" = "NAIMOR\\Domain Admins" ]
+}
+
+@test "domgroup_format_smb: rejects empty group" {
+    ! appcore_id_domgroup_format_smb 'NAIMOR' ''
+}
+
+@test "domgroup_format_smb: rejects bad domain" {
+    ! appcore_id_domgroup_format_smb '1bad' 'Domain Admins'
+}
+
+@test "domgroup_format_display: same shape as _smb today" {
+    # If this ever diverges the behavior change must be deliberate;
+    # the contract: _display === _smb until proven otherwise.
+    smb=$(appcore_id_domgroup_format_smb 'NAIMOR' 'Domain Admins')
+    disp=$(appcore_id_domgroup_format_display 'NAIMOR' 'Domain Admins')
+    [ "$disp" = "$smb" ]
+}
+
+@test "domgroup_format_sudoers: escapes spaces with backslash" {
+    # sudoers needs `Domain\ Admins` so sudo doesn't treat `Admins` as
+    # the runas spec.
+    result=$(appcore_id_domgroup_format_sudoers 'NAIMOR' 'Domain Admins')
+    [ "$result" = "NAIMOR\\Domain\\ Admins" ]
+}
+
+@test "domgroup_format_sudoers: single-word group needs no escape" {
+    result=$(appcore_id_domgroup_format_sudoers 'NAIMOR' 'Single')
+    [ "$result" = "NAIMOR\\Single" ]
+}
+
+@test "domgroup_format_sudoers: no-domain group still escaped" {
+    result=$(appcore_id_domgroup_format_sudoers '' 'Domain Admins')
+    [ "$result" = "Domain\\ Admins" ]
+}
+
+@test "domgroup: round-trip parse → normalize is stable for all accepted forms" {
+    local inputs=(
+        'NAIMOR\Domain Admins'
+        'NAIMOR\Domain\ Admins'
+        'NAIMOR\\Domain Admins'
+        'NAIMOR\"Domain Admins"'
+        '  NAIMOR\Domain Admins  '
+    )
+    local expected='NAIMOR\Domain Admins'
+    for s in "${inputs[@]}"; do
+        result=$(appcore_id_domgroup_normalize "$s")
+        [ "$result" = "$expected" ] || { echo "input '$s' -> '$result', expected '$expected'"; return 1; }
+    done
 }
 
 # ============================================================================

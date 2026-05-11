@@ -276,3 +276,211 @@ appcore_id_unc_compose() {
         printf '\\\\%s\\%s' "$server" "$share"
     fi
 }
+
+# ============================================================================
+# DOMAIN\Group — AD group references in `DOMAIN\Group Name` form
+# ============================================================================
+# AD groups in Samba contexts appear as `<NETBIOS>\<Group Name>` (one
+# backslash, group may contain literal spaces). Operator inputs sometimes
+# arrive escape-doubled (`Domain\ Admins` typed at a shell prompt that
+# would unescape it, but reaching us as a literal backslash-space pair)
+# or quoted. Without a single point of truth for accept/parse/format,
+# each consumer rolls its own and ends up with mismatched display
+# ("NAIMOR\\Domain\ Admins" instead of "NAIMOR\Domain Admins") or
+# rejection of valid input ("syntax error" on "Domain Admins").
+#
+# Public surface:
+#   appcore_id_domgroup_normalize <s>
+#       Print the canonical form: one literal backslash between
+#       domain and group; group contains literal spaces (no escapes,
+#       no quotes). Accepted input shapes:
+#         - "DOMAIN\Group"
+#         - "DOMAIN\Group Name"            (space)
+#         - "DOMAIN\Group\ Name"           (escaped space, common at
+#                                           shells; treat the `\ ` as
+#                                           a single space)
+#         - "DOMAIN\\Group Name"           (double backslash; common
+#                                           when an operator typed a
+#                                           string into a config file)
+#         - 'DOMAIN\"Group Name"'           (group quoted)
+#         - "  DOMAIN\Group  "             (surrounding whitespace)
+#         - "Group Name"                   (no domain prefix — caller
+#                                           decides whether to accept;
+#                                           we return rc=0 with
+#                                           APPCORE_ID_DG_DOMAIN empty)
+#       Rejects: empty, multiple backslashes inside the group, group
+#       containing characters Samba/AD reject (`/`, `[`, `]`, `:`,
+#       `;`, `|`, `=`, `+`, `*`, `?`, `<`, `>`, control chars), domain
+#       not matching NetBIOS rules (when present).
+#
+#   appcore_id_domgroup_validate <s>
+#       Same accept set as _normalize. Returns 0/1 without printing.
+#
+#   appcore_id_domgroup_parse <s>
+#       Side-effects APPCORE_ID_DG_DOMAIN and APPCORE_ID_DG_GROUP
+#       from a valid input. Caller can then format for any context.
+#
+#   appcore_id_domgroup_format_smb <domain> <group>
+#       Print the smb.conf-ready form: `DOMAIN\Group Name` — single
+#       backslash, literal space, no quotes. This is what `samba-tool
+#       group addmembers` accepts via positional arg and what
+#       `valid users` is happy with when wrapped in @"...".
+#
+#   appcore_id_domgroup_format_display <domain> <group>
+#       Print the operator-facing form: same as _format_smb but
+#       safe for whiptail msgbox / textbox where literal backslash
+#       must NOT be doubled. (Whiptail does not interpret `\` so
+#       this is identical to _format_smb today; the function exists
+#       so callers can be explicit about intent and so a future
+#       display-encoding change has one place to land.)
+#
+#   appcore_id_domgroup_format_sudoers <domain> <group>
+#       Print the sudoers-ready form. sudoers special-quotes
+#       backslash and space inside %group references: `%domain\Group\
+#       Name` (backslash before each space inside the group). This is
+#       the only context where escape-doubling is correct.
+
+APPCORE_ID_DG_DOMAIN=""
+APPCORE_ID_DG_GROUP=""
+
+# Internal: NetBIOS-style domain short-name validation. Reuses the
+# existing public validator; kept as a thin alias so future evolutions
+# of "what's a valid NetBIOS domain" land in one place.
+_appcore_id_dg_domain_valid() {
+    appcore_id_netbios_validate "$1"
+}
+
+# Internal: group-name character class. Letters, digits, space, dot,
+# dash, underscore, ampersand, apostrophe, parens. Rejects anything
+# Samba/AD/sudoers treats specially (slashes, brackets, control chars,
+# the structural backslash).
+_appcore_id_dg_group_valid() {
+    local s="${1:-}"
+    (( ${#s} >= 1 && ${#s} <= 256 )) || return 1
+    [[ "$s" =~ ^[A-Za-z0-9._\ \&\'\(\)-]+$ ]] || return 1
+    # Reject leading or trailing space (display + parsing ambiguity).
+    [[ "$s" == \ * || "$s" == *\  ]] && return 1
+    # Reject runs of internal spaces (display ambiguity; AD also
+    # collapses these in practice).
+    [[ "$s" == *"  "* ]] && return 1
+    return 0
+}
+
+# Internal: canonicalize a raw input into (domain, group). Sets
+# APPCORE_ID_DG_DOMAIN and APPCORE_ID_DG_GROUP on success. Returns 1
+# without side-effects on rejection.
+_appcore_id_dg_parse_internal() {
+    local raw="${1-}"
+    APPCORE_ID_DG_DOMAIN=""
+    APPCORE_ID_DG_GROUP=""
+
+    # Trim surrounding whitespace.
+    while [[ "$raw" == [[:space:]]* ]]; do raw="${raw#?}"; done
+    while [[ "$raw" == *[[:space:]] ]]; do raw="${raw%?}"; done
+    [[ -n "$raw" ]] || return 1
+
+    # Collapse `\\` → `\` (config-file or operator double-escape).
+    raw="${raw//\\\\/\\}"
+
+    # Leading backslash means an operator intended to type a domain
+    # prefix and left it blank. Reject — ambiguous + a typo we should
+    # surface rather than silently treat as "no domain".
+    [[ "$raw" == \\* ]] && return 1
+
+    # Split on the FIRST backslash. The remainder is the group portion
+    # (which may still contain shell-style `\ ` escapes we haven't
+    # unescaped yet).
+    local domain="" group="$raw"
+    if [[ "$raw" == *\\* ]]; then
+        domain="${raw%%\\*}"
+        group="${raw#*\\}"
+    fi
+
+    # Backslash-space → literal space INSIDE the group. Operators
+    # reaching us from a shell prompt commonly type "Domain\ Admins";
+    # if that escape survives into our input, treat the `\<space>` as
+    # one literal space, not a backslash followed by a space.
+    # This MUST happen before the residual-backslash check below;
+    # otherwise the valid form 'DOMAIN\Group\ Name' would be rejected.
+    group="${group//\\ / }"
+
+    # Strip a single layer of double-quotes around the group if both
+    # ends carry them.
+    if [[ "$group" == \"*\" ]]; then
+        group="${group%\"}"
+        group="${group#\"}"
+    fi
+
+    # Any backslash that survives is illegal in the group (a real
+    # second separator, or a stray escape we don't recognize).
+    [[ "$group" == *\\* ]] && return 1
+
+    # Validate.
+    if [[ -n "$domain" ]]; then
+        _appcore_id_dg_domain_valid "$domain" || return 1
+    fi
+    _appcore_id_dg_group_valid "$group" || return 1
+
+    APPCORE_ID_DG_DOMAIN="$domain"
+    APPCORE_ID_DG_GROUP="$group"
+    return 0
+}
+
+appcore_id_domgroup_validate() {
+    _appcore_id_dg_parse_internal "${1-}" >/dev/null 2>&1
+}
+
+appcore_id_domgroup_parse() {
+    _appcore_id_dg_parse_internal "${1-}" || return 1
+    # parse() is documented to set the two globals; nothing else.
+    export APPCORE_ID_DG_DOMAIN APPCORE_ID_DG_GROUP
+}
+
+appcore_id_domgroup_normalize() {
+    _appcore_id_dg_parse_internal "${1-}" || return 1
+    if [[ -n "$APPCORE_ID_DG_DOMAIN" ]]; then
+        printf '%s\\%s' "$APPCORE_ID_DG_DOMAIN" "$APPCORE_ID_DG_GROUP"
+    else
+        printf '%s' "$APPCORE_ID_DG_GROUP"
+    fi
+}
+
+appcore_id_domgroup_format_smb() {
+    local domain="${1-}" group="${2-}"
+    [[ -n "$group" ]] || return 1
+    _appcore_id_dg_group_valid "$group" || return 1
+    if [[ -n "$domain" ]]; then
+        _appcore_id_dg_domain_valid "$domain" || return 1
+        printf '%s\\%s' "$domain" "$group"
+    else
+        printf '%s' "$group"
+    fi
+}
+
+appcore_id_domgroup_format_display() {
+    # Identical to _format_smb today. Separate function so callers can
+    # state intent and so a future encoding-shift (e.g. ANSI escape
+    # for a TUI) has one place to land.
+    appcore_id_domgroup_format_smb "$@"
+}
+
+appcore_id_domgroup_format_sudoers() {
+    # sudoers escapes both backslash AND spaces inside a %group spec:
+    #
+    #   %DOMAIN\Group\ Name  ALL=(ALL) ALL
+    #
+    # The backslash before the structural backslash is implicit (sudo
+    # parses one backslash as a separator); spaces inside the group
+    # name MUST be backslash-escaped or sudo treats the rest of the
+    # line as the runas spec.
+    local domain="${1-}" group="${2-}"
+    [[ -n "$group" ]] || return 1
+    _appcore_id_dg_group_valid "$group" || return 1
+    local escaped_group="${group// /\\ }"
+    if [[ -n "$domain" ]]; then
+        _appcore_id_dg_domain_valid "$domain" || return 1
+        printf '%s\\%s' "$domain" "$escaped_group"
+    else
+        printf '%s' "$escaped_group"
+    fi
+}
