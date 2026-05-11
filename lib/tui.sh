@@ -284,6 +284,53 @@ appcore_tui_yesno() {
     fi
 }
 
+# Sized textbox dialog that displays an arbitrary string body
+# VERBATIM — no whiptail backslash-escape interpretation.
+#
+# Why this exists: `whiptail --msgbox` runs the body string through
+# C-style escape processing (`\n` → newline, `\t` → tab, `\a` → BEL,
+# `\b` → backspace, `\v`, `\f`, `\\` → `\`, etc.). That's fine for
+# short label strings the developer controls, but it MANGLES content
+# that contains literal backslashes — most famously `NAIMOR\admin`
+# output from `wbinfo -u` (the `\a` becomes BEL, the `a` is lost in
+# rendering; same for `\g`, `\v`, etc.). It also bites any message
+# body that references a UNC path or a DOMAIN\Group in literal text.
+#
+# `whiptail --textbox <file>` reads the file BYTE-for-BYTE. By
+# writing the body to a temp file first, we get correct rendering of
+# arbitrary text including backslashes, tabs, and any other
+# pseudo-escape-shaped content.
+#
+# Use this for:
+#   - displaying captured tool output (wbinfo, samba-tool, etc.) AS
+#     part of a longer message that has labels + the captured content
+#   - any message body that mentions DOMAIN\Group or \\server\share
+#     in literal text the operator must read accurately
+#
+# For purely captured-output dialogs (no labels), the existing
+# appcore_tui_show_capture / appcore_tui_show_output one-call helpers
+# are still the right tool — they ANSI-strip and manage the temp file
+# for you.
+#
+# Usage:
+#   appcore_tui_show_text "Domain logins" "Domain logins configured.
+#
+#   wbinfo -u sample:
+#   $(wbinfo -u | head -5)
+#
+#   SSH usage: ssh 'NAIMOR\user'@server"
+appcore_tui_show_text() {
+    local title="${1:?title required}"
+    local body="${2-}"
+    local rows cols
+    read -r rows cols < <(appcore_tui_size)
+    local tmp
+    tmp=$(mktemp -t appcore-tui-text.XXXXXX)
+    printf '%s\n' "$body" > "$tmp"
+    whiptail --title "$title" --scrolltext --textbox "$tmp" "$rows" "$cols"
+    rm -f "$tmp"
+}
+
 # Sized inputbox. Prints the operator's input on stdout, or empty +
 # rc!=0 on Cancel. For validated input, see appcore_tui_prompt_validated.
 #

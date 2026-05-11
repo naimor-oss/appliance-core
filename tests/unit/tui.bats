@@ -379,6 +379,84 @@ EOF
 }
 
 # ============================================================================
+# show_text — verbatim body display (no whiptail escape interpretation)
+# ============================================================================
+
+@test "show_text: writes body to a tempfile and invokes whiptail --textbox" {
+    fake_tput 30 100
+    recordfile=$(mktemp)
+    # Whiptail mock: record argv, plus copy the textbox-input file
+    # so the test can verify body content was preserved.
+    cat > "${FAKEBIN}/whiptail" <<EOF
+#!/usr/bin/env bash
+printf '%s\\n' "\$@" > "${recordfile}"
+# Whiptail's --textbox file argument is the second-to-last on a
+# typical invocation: --title T --scrolltext --textbox <FILE> R C.
+# Find it by looking for the --textbox flag and grabbing the next arg.
+for ((i=1; i<=\$#; i++)); do
+    if [[ "\${!i}" == "--textbox" ]]; then
+        j=\$((i+1))
+        cp "\${!j}" "${recordfile}.body"
+        break
+    fi
+done
+exit 0
+EOF
+    chmod +x "${FAKEBIN}/whiptail"
+
+    appcore_tui_show_text "Domain logins" $'Domain logins configured.\n\nNAIMOR\\administrator\nNAIMOR\\guest\nNAIMOR\\krbtgt'
+
+    grep -qFx -e '--textbox' "$recordfile"
+    grep -qFx -e '--scrolltext' "$recordfile"
+    grep -qFx "Domain logins" "$recordfile"
+
+    # The captured body file must contain the LITERAL backslashes —
+    # not interpreted as escape sequences. This is the contract.
+    [ -f "${recordfile}.body" ]
+    grep -qFx "NAIMOR\\administrator" "${recordfile}.body"
+    grep -qFx "NAIMOR\\guest"         "${recordfile}.body"
+    grep -qFx "NAIMOR\\krbtgt"        "${recordfile}.body"
+
+    rm -f "${recordfile}.body"
+}
+
+@test "show_text: preserves DOMAIN\\Group with literal backslash + space" {
+    fake_tput 30 100
+    recordfile=$(mktemp)
+    cat > "${FAKEBIN}/whiptail" <<EOF
+#!/usr/bin/env bash
+for ((i=1; i<=\$#; i++)); do
+    if [[ "\${!i}" == "--textbox" ]]; then
+        j=\$((i+1))
+        cp "\${!j}" "${recordfile}.body"
+        break
+    fi
+done
+exit 0
+EOF
+    chmod +x "${FAKEBIN}/whiptail"
+
+    appcore_tui_show_text "Sudo granted" "Sudo granted to 'NAIMOR\\Domain Admins'."
+    [ -f "${recordfile}.body" ]
+    # Verbatim — no doubled backslash, no leaked '\D' escape, literal space.
+    grep -qFx "Sudo granted to 'NAIMOR\\Domain Admins'." "${recordfile}.body"
+
+    rm -f "${recordfile}.body"
+}
+
+@test "show_text: removes the tempfile after whiptail returns" {
+    fake_tput 30 100
+    fake_whiptail "$(mktemp)"
+    # Snapshot tempfile count, run, re-snapshot. The lib's mktemp uses
+    # -t appcore-tui-text.XXXXXX so we can grep by that prefix.
+    local before after
+    before=$(find /tmp /var/folders -maxdepth 2 -name 'appcore-tui-text.*' 2>/dev/null | wc -l)
+    appcore_tui_show_text "T" "body"
+    after=$(find /tmp /var/folders -maxdepth 2 -name 'appcore-tui-text.*' 2>/dev/null | wc -l)
+    [ "$before" -eq "$after" ]
+}
+
+# ============================================================================
 # Sentinel guard
 # ============================================================================
 
