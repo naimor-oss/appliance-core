@@ -29,6 +29,16 @@
 #       On Cancel or validation give-up: returns non-zero, exported
 #       var empty.
 #
+#   appcore_hostname_align_to_realm <new_realm>
+#       Re-apply the host's identity under <new_realm>. Keeps the
+#       current short name and current global IPv4; rewrites
+#       /etc/hostname, hostnamectl, and /etc/hosts so the FQDN, host
+#       aliases, and reverse-lookup-friendly host line all match the
+#       joined realm. Use this after a successful AD provision/join
+#       where the appliance was previously bound to a different
+#       realm (e.g. the lab's default lab.test still in /etc/hosts
+#       after joining naimor.naimorinc.com). Idempotent.
+#
 # Sentinel-guarded; auto-sources identity.sh and tui.sh.
 #
 # Naming: APPCORE_HOSTNAME_* / appcore_hostname_*. set -u safe.
@@ -211,4 +221,48 @@ appcore_hostname_change_tui() {
 
     APPCORE_HOSTNAME_NEW_FQDN=$(appcore_id_fqdn_compose "$new_short" "$domain")
     return 0
+}
+
+# ----- realm-alignment shortcut ----------------------------------------------
+
+appcore_hostname_align_to_realm() {
+    local new_realm="${1-}"
+    [[ -n "$new_realm" ]] || {
+        echo "appcore_hostname: align_to_realm: realm required" >&2
+        return 1
+    }
+    appcore_id_domain_validate "$new_realm" || {
+        echo "appcore_hostname: align_to_realm: invalid realm '$new_realm'" >&2
+        return 1
+    }
+
+    # Determine the current short name. hostname -s honors hostnamectl
+    # so this stays correct across earlier hostname changes within the
+    # same session.
+    local short
+    short=$(hostname -s 2>/dev/null || hostname)
+    [[ -n "$short" ]] || {
+        echo "appcore_hostname: align_to_realm: cannot determine current short name" >&2
+        return 1
+    }
+
+    # Pick the IP from the default-route interface. This is the address
+    # the joined realm's DNS would have for us, and the one /etc/hosts
+    # should resolve our FQDN to. Using `ip route get` (rather than the
+    # first scope-global address found) handles multi-NIC appliances
+    # (the smb-proxy case) cleanly — only the domain-side NIC reaches
+    # the realm.
+    local ip
+    ip=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}')
+    if [[ -z "$ip" ]]; then
+        # Fallback for offline / no-default-route hosts: first global v4.
+        ip=$(ip -o -4 addr show scope global 2>/dev/null \
+             | awk 'NR==1 {sub(/\/.*$/,"",$4); print $4}')
+    fi
+    [[ -n "$ip" ]] || {
+        echo "appcore_hostname: align_to_realm: cannot determine current IPv4" >&2
+        return 1
+    }
+
+    appcore_hostname_apply_safe "$short" "$new_realm" "$ip"
 }

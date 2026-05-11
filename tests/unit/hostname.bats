@@ -237,6 +237,148 @@ EOF
 }
 
 # ============================================================================
+# align_to_realm — re-apply identity under a newly-joined realm
+# (the field-reported "lab.test stuck after joining naimor.naimorinc.com")
+# ============================================================================
+
+# Mock for `ip -4 route get` + `ip -o -4 addr` such that the realm-
+# alignment helper can resolve the current IPv4 to a known value.
+align_mocks() {
+    fake_cmd_args hostname '
+case "$1" in
+    -s) echo "mal-dc2" ;;
+    *)  echo "mal-dc2" ;;
+esac
+'
+    fake_cmd_args ip '
+case "$*" in
+    *"-4 route get 1.1.1.1"*) echo "1.1.1.1 via 10.10.10.1 dev eth0 src 10.10.10.42 uid 0";;
+    *"-o -4 addr show scope global"*) echo "2: eth0    inet 10.10.10.42/24 scope global eth0";;
+esac
+'
+    fake_cmd_args resolvectl 'echo ""'
+    fake_cmd_args dig 'echo ""'
+    fake_cmd_args dnsdomainname 'echo ""'
+}
+
+@test "align_to_realm: rejects empty / invalid realm" {
+    align_mocks
+    ! appcore_hostname_align_to_realm
+    ! appcore_hostname_align_to_realm ""
+    ! appcore_hostname_align_to_realm "not a valid domain"
+}
+
+@test "align_to_realm: rejects .local (mDNS conflict)" {
+    align_mocks
+    ! appcore_hostname_align_to_realm "naimor.local"
+}
+
+@test "align_to_realm: writes FQDN + /etc/hosts under the new realm" {
+    align_mocks
+    # Pre-state: /etc/hosts holds the stale lab.test entry the operator
+    # had before joining a different realm.
+    cat > "$HOSTSFILE" <<EOF
+127.0.0.1 localhost
+10.10.10.42 mal-dc2.lab.test mal-dc2
+EOF
+
+    appcore_hostname_align_to_realm "naimor.naimorinc.com"
+
+    # hostnamectl received the new FQDN.
+    grep -qx "set-hostname" "${FAKEBIN}/hostnamectl.argv"
+    grep -qx "mal-dc2.naimor.naimorinc.com" "${FAKEBIN}/hostnamectl.argv"
+    # /etc/hostname carries the new FQDN.
+    grep -qx "mal-dc2.naimor.naimorinc.com" "$HOSTNAMEFILE"
+    # /etc/hosts now carries ONE line for our IP, pointing at the
+    # NEW realm; the stale lab.test entry MUST have been stripped.
+    cat "$HOSTSFILE"
+    grep -qE "^10\.10\.10\.42[[:space:]]+mal-dc2\.naimor\.naimorinc\.com[[:space:]]+mal-dc2$" "$HOSTSFILE"
+    ! grep -qF "lab.test" "$HOSTSFILE"
+}
+
+@test "align_to_realm: idempotent on second run with same realm" {
+    align_mocks
+    cat > "$HOSTSFILE" <<EOF
+127.0.0.1 localhost
+EOF
+    appcore_hostname_align_to_realm "naimor.naimorinc.com"
+    appcore_hostname_align_to_realm "naimor.naimorinc.com"
+    # Exactly one line for our IP.
+    local n; n=$(grep -cE "^10\.10\.10\.42[[:space:]]" "$HOSTSFILE")
+    [ "$n" -eq 1 ]
+    # Stale realm still absent.
+    ! grep -qF "lab.test" "$HOSTSFILE"
+}
+
+@test "align_to_realm: re-aligning from realm A to realm B replaces, not appends" {
+    align_mocks
+    cat > "$HOSTSFILE" <<EOF
+127.0.0.1 localhost
+EOF
+    appcore_hostname_align_to_realm "lab.test"
+    appcore_hostname_align_to_realm "naimor.naimorinc.com"
+    # The /etc/hosts entry now carries the NEW realm, not the previous.
+    grep -qE "^10\.10\.10\.42[[:space:]]+mal-dc2\.naimor\.naimorinc\.com[[:space:]]+mal-dc2$" "$HOSTSFILE"
+    ! grep -qF "lab.test" "$HOSTSFILE"
+    # Exactly one line for our IP — no append.
+    local n; n=$(grep -cE "^10\.10\.10\.42[[:space:]]" "$HOSTSFILE")
+    [ "$n" -eq 1 ]
+}
+
+@test "align_to_realm: prefers default-route src over scope-global first entry" {
+    # Multi-NIC case: the first scope-global address is the LegacyZone
+    # NIC (172.29.137.10), but the default route's source is the
+    # domain NIC (10.10.10.42). align_to_realm should write the
+    # domain-side IP into /etc/hosts.
+    fake_cmd_args hostname '
+case "$1" in
+    -s) echo "smbproxy-1" ;;
+    *)  echo "smbproxy-1" ;;
+esac
+'
+    fake_cmd_args ip '
+case "$*" in
+    *"-4 route get 1.1.1.1"*) echo "1.1.1.1 via 10.10.10.1 dev eth0 src 10.10.10.30 uid 0";;
+    *"-o -4 addr show scope global"*) printf "2: eth1    inet 172.29.137.10/24 scope global eth1\n3: eth0    inet 10.10.10.30/24 scope global eth0\n";;
+esac
+'
+    fake_cmd_args resolvectl 'echo ""'
+    fake_cmd_args dig 'echo ""'
+    fake_cmd_args dnsdomainname 'echo ""'
+    cat > "$HOSTSFILE" <<EOF
+127.0.0.1 localhost
+EOF
+    appcore_hostname_align_to_realm "naimor.naimorinc.com"
+    grep -qE "^10\.10\.10\.30[[:space:]]+smbproxy-1\.naimor\.naimorinc\.com[[:space:]]+smbproxy-1$" "$HOSTSFILE"
+    # No entry for the legacy-zone IP.
+    ! grep -qE "^172\.29\.137\.10[[:space:]]" "$HOSTSFILE"
+}
+
+@test "align_to_realm: fallback to first-global when default route is missing" {
+    fake_cmd_args hostname '
+case "$1" in
+    -s) echo "mal-dc2" ;;
+    *)  echo "mal-dc2" ;;
+esac
+'
+    # `ip -4 route get 1.1.1.1` prints nothing; the fallback kicks in.
+    fake_cmd_args ip '
+case "$*" in
+    *"-4 route get 1.1.1.1"*) ;;
+    *"-o -4 addr show scope global"*) echo "2: eth0    inet 10.10.10.42/24 scope global eth0";;
+esac
+'
+    fake_cmd_args resolvectl 'echo ""'
+    fake_cmd_args dig 'echo ""'
+    fake_cmd_args dnsdomainname 'echo ""'
+    cat > "$HOSTSFILE" <<EOF
+127.0.0.1 localhost
+EOF
+    appcore_hostname_align_to_realm "naimor.naimorinc.com"
+    grep -qE "^10\.10\.10\.42[[:space:]]+mal-dc2\.naimor\.naimorinc\.com[[:space:]]+mal-dc2$" "$HOSTSFILE"
+}
+
+# ============================================================================
 # Sentinel guard
 # ============================================================================
 
