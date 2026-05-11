@@ -21,6 +21,7 @@ and
 | Look up the **lab scenarios** for the blank image | [`docs/LAB-TESTING.md`](docs/LAB-TESTING.md) |
 | Understand the **sibling-repo split** | [`../dev-commons/REPO-SPLIT.md`](../dev-commons/REPO-SPLIT.md) |
 | Look up **shared coding/docs/test conventions** | [`../dev-commons/STYLE.md`](../dev-commons/STYLE.md) |
+| **Validate** that a downstream appliance actually consumes the appliance-core abstractions (vs. ad-hoc reimplementation) | `bin/compliance-check.sh --list` |
 
 At runtime the lab depends on `lab-kit` (test runner) and
 `lab-router` (lab DHCP/DNS). The two product appliances depend on
