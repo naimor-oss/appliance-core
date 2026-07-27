@@ -2,7 +2,7 @@
 # Unit tests for lib/hostname.sh.
 #
 # Strategy: PATH-shadow `hostnamectl`, `ip`, `dnsdomainname`,
-# `resolvectl`, `dig`, `hostname` so they produce controlled output.
+# `resolvectl`, `dig`, `timeout`, `hostname` so they produce controlled output.
 # Use the test-only _APPCORE_HOSTNAME_HOSTS_FILE / _APPCORE_HOSTNAME_HOSTNAME_FILE
 # overrides to point /etc/hosts and /etc/hostname at temp files.
 #
@@ -35,6 +35,10 @@ printf '%s\n' "\$@" > "${FAKEBIN}/hostnamectl.argv"
 exit 0
 EOF
     chmod +x "${FAKEBIN}/hostnamectl"
+
+    # macOS does not ship GNU timeout. Keep the unit test isolated from
+    # host tooling while preserving timeout's command-wrapper behavior.
+    fake_cmd_args timeout 'shift; "$@"'
 }
 
 teardown() {
