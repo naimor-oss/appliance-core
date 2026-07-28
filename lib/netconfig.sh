@@ -35,10 +35,12 @@
 #       Run `netplan apply`, optionally tee its output to <out_log_path>.
 #       Returns netplan's exit code.
 #
-#   appcore_netconfig_change_tui_single_nic <out_path> <iface_match_pattern>
+#   appcore_netconfig_change_tui_single_nic <out_path> <iface_match_pattern> \
+#                                           [dns_fallback]
 #       Full single-NIC TUI flow. Auto-detects current addr source;
 #       offers "pin current DHCP lease as static" when the host is on
-#       DHCP. Renders + applies on confirmation.
+#       DHCP. When live resolver detection is empty, uses dns_fallback
+#       before the public 1.1.1.1 default. Renders + applies on confirmation.
 #
 # Auto-sources identity.sh + tui.sh from the standard vendor path.
 # Sentinel-guarded; APPCORE_NETCONFIG_LOADED.
@@ -182,6 +184,7 @@ appcore_netconfig_apply() {
 appcore_netconfig_change_tui_single_nic() {
     local out_path="${1:?output path required}"
     local match_pattern="${2:?iface match pattern required}"
+    local dns_fallback="${3:-}"
 
     # Pick the default-route interface as the operator-relevant one.
     local iface
@@ -197,18 +200,18 @@ appcore_netconfig_change_tui_single_nic() {
     addr_src=$(appcore_netconfig_get_addr_source "$iface")
 
     # Current values via detect-net (if loaded).
-    local cur_ip cur_prefix cur_gw cur_dns
+    local cur_ip cur_prefix cur_gw cur_dns=""
     if command -v appcore_detect_net_init >/dev/null 2>&1; then
         appcore_detect_net_init >/dev/null 2>&1 || true
         cur_ip="${APPCORE_DET_IP:-}"
         cur_gw="${APPCORE_DET_GATEWAY:-}"
-        cur_dns="${APPCORE_DET_DHCP_DNS:-1.1.1.1}"
+        cur_dns="${APPCORE_DET_DHCP_DNS:-}"
     else
         cur_ip=$(ip -o -4 addr show dev "$iface" scope global 2>/dev/null \
             | awk 'NR==1 {sub(/\/.*$/,"",$4); print $4}')
         cur_gw=$(ip route show default 2>/dev/null | awk '/default/ {print $3; exit}')
-        cur_dns="1.1.1.1"
     fi
+    cur_dns="${cur_dns:-${dns_fallback:-1.1.1.1}}"
     cur_prefix=$(ip -o -4 addr show dev "$iface" scope global 2>/dev/null \
         | awk 'NR==1 {split($4,a,"/"); print a[2]}')
     cur_prefix="${cur_prefix:-24}"

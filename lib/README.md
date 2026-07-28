@@ -41,7 +41,7 @@ was prepared — recorded by each consumer into
 | `tui.sh` | landed v0.11.0 — 30/31 unit tests green (1 skipped on macOS; added show_text for backslash-safe verbatim body display) | [`../docs/lib-tui.md`](../docs/lib-tui.md) |
 | `hostname.sh` | landed v0.8.0 — 21/21 unit tests green (depends on identity + tui; added align_to_realm for post-join /etc/hosts re-write) | [`../docs/lib-hostname.md`](../docs/lib-hostname.md) |
 | `apt-helpers.sh` | landed v0.5.0 — 11/11 unit tests green (2 skipped on Mac) | [`../docs/lib-apt-helpers.md`](../docs/lib-apt-helpers.md) |
-| `netconfig.sh` | landed v0.6.0 — 17/17 unit tests green | [`../docs/lib-netconfig.md`](../docs/lib-netconfig.md) |
+| `netconfig.sh` | landed v0.11.1 — 19/19 unit tests green (preserves a caller's cached DHCP DNS when live detection is empty) | [`../docs/lib-netconfig.md`](../docs/lib-netconfig.md) |
 | `console-wizard.sh` | future | — |
 | `motd.sh` | future | — |
 
