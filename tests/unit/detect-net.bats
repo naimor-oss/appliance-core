@@ -22,7 +22,7 @@ teardown() {
     unset APPCORE_DET_IP APPCORE_DET_GATEWAY APPCORE_DET_DHCP_DNS \
           APPCORE_DET_DHCP_DOMAIN APPCORE_DET_PTR_FQDN \
           APPCORE_DET_PTR_NAME APPCORE_DET_PTR_DOMAIN \
-          APPCORE_DET_EFFECTIVE_DOMAIN
+          APPCORE_DET_EFFECTIVE_DOMAIN APPCORE_DET_EFFECTIVE_DOMAIN_SOURCE
 }
 
 # ---------- helper: install a fake binary in FAKEBIN -------------------------
@@ -89,6 +89,7 @@ esac
     [ "$APPCORE_DET_PTR_NAME"          = "ad01" ]
     [ "$APPCORE_DET_PTR_DOMAIN"        = "example.lan" ]
     [ "$APPCORE_DET_EFFECTIVE_DOMAIN"  = "example.lan" ]
+    [ "$APPCORE_DET_EFFECTIVE_DOMAIN_SOURCE" = "dhcp" ]
 }
 
 # ---------- failure modes ---------------------------------------------------
@@ -110,6 +111,7 @@ esac
     [ -z "$APPCORE_DET_PTR_NAME" ]
     [ -z "$APPCORE_DET_PTR_DOMAIN" ]
     [ -z "$APPCORE_DET_EFFECTIVE_DOMAIN" ]
+    [ -z "$APPCORE_DET_EFFECTIVE_DOMAIN_SOURCE" ]
 }
 
 @test "PTR timeout: PTR fields empty, other fields unaffected" {
@@ -238,6 +240,42 @@ EOF
     [ "$APPCORE_DET_EFFECTIVE_DOMAIN" = "cached.lan" ]
 }
 
+@test "cache from a different network cannot restore a stale domain" {
+    fake_cmd_args ip '
+case "$*" in
+    *"-o -4 addr show scope global"*) echo "2: ens33    inet 192.168.50.20/24 scope global ens33";;
+    *"route show default"*)            echo "default via 192.168.50.1 dev ens33";;
+esac
+'
+    fake_cmd_args resolvectl 'echo ""'
+    fake_cmd_args dig 'echo ""'
+    fake_timeout_passthrough
+
+    local cache="${BATS_TMPDIR}/stale-network.env"
+    cat > "$cache" <<'EOF'
+APPCORE_DET_IP="10.10.10.20"
+APPCORE_DET_GATEWAY="10.10.10.1"
+APPCORE_DET_DHCP_DNS="10.10.10.1"
+APPCORE_DET_DHCP_DOMAIN="lab.test"
+APPCORE_DET_PTR_FQDN="samba-dc1.lab.test"
+APPCORE_DET_PTR_NAME="samba-dc1"
+APPCORE_DET_PTR_DOMAIN="lab.test"
+APPCORE_DET_EFFECTIVE_DOMAIN="lab.test"
+APPCORE_DET_EFFECTIVE_DOMAIN_SOURCE="dhcp"
+EOF
+
+    source "${LIB_DIR}/detect-net.sh"
+    appcore_detect_net_init "$cache"
+
+    [ "$APPCORE_DET_IP" = "192.168.50.20" ]
+    [ "$APPCORE_DET_GATEWAY" = "192.168.50.1" ]
+    [ -z "$APPCORE_DET_DHCP_DNS" ]
+    [ -z "$APPCORE_DET_DHCP_DOMAIN" ]
+    [ -z "$APPCORE_DET_PTR_DOMAIN" ]
+    [ -z "$APPCORE_DET_EFFECTIVE_DOMAIN" ]
+    [ -z "$APPCORE_DET_EFFECTIVE_DOMAIN_SOURCE" ]
+}
+
 @test "live PTR overrides cache (the regression we just fixed)" {
     fake_cmd_args ip '
 case "$*" in
@@ -299,11 +337,12 @@ esac
     unset APPCORE_DET_IP APPCORE_DET_GATEWAY APPCORE_DET_DHCP_DNS \
           APPCORE_DET_DHCP_DOMAIN APPCORE_DET_PTR_FQDN \
           APPCORE_DET_PTR_NAME APPCORE_DET_PTR_DOMAIN \
-          APPCORE_DET_EFFECTIVE_DOMAIN
+          APPCORE_DET_EFFECTIVE_DOMAIN APPCORE_DET_EFFECTIVE_DOMAIN_SOURCE
 
     appcore_detect_net_init "$cache"
 
     [ "$APPCORE_DET_PTR_FQDN" = "$saved_fqdn" ]
     [ "$APPCORE_DET_PTR_FQDN" = "host7.roundtrip.test" ]
     [ "$APPCORE_DET_DHCP_DOMAIN" = "roundtrip.test" ]
+    [ "$APPCORE_DET_EFFECTIVE_DOMAIN_SOURCE" = "dhcp" ]
 }

@@ -162,6 +162,15 @@ EOF
     rm -f "$log"
 }
 
+@test "apply: successful silent netplan leaves a useful result message" {
+    fake_cmd_args netplan 'exit 0'
+    log=$(mktemp -t netconfig-bats.XXXXXX)
+    appcore_netconfig_apply "$log"
+    [ -s "$log" ]
+    grep -q 'applied successfully' "$log"
+    rm -f "$log"
+}
+
 # ============================================================================
 # single-NIC TUI defaults
 # ============================================================================

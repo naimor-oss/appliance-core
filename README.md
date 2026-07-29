@@ -49,7 +49,7 @@ so a deployed product appliance has no runtime dependency on
 
 ## Status
 
-**Current shared-library release: `lib/VERSION=0.11.1`.**
+**Current shared-library release: `lib/VERSION=0.12.0`.**
 
 Six libraries are landed (`detect-net`, `identity`, `tui`, `hostname`,
 `apt-helpers`, and `netconfig`) with 184 Bats cases. Both product

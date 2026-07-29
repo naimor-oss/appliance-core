@@ -174,7 +174,11 @@ appcore_netconfig_apply() {
     local log_path="${1:-}"
     if [[ -n "$log_path" ]]; then
         netplan apply 2>&1 | tee "$log_path"
-        return "${PIPESTATUS[0]}"
+        local rc="${PIPESTATUS[0]}"
+        if (( rc == 0 )) && [[ ! -s "$log_path" ]]; then
+            printf 'Network configuration applied successfully.\n' > "$log_path"
+        fi
+        return "$rc"
     fi
     netplan apply
 }

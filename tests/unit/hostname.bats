@@ -1,8 +1,8 @@
 #!/usr/bin/env bats
 # Unit tests for lib/hostname.sh.
 #
-# Strategy: PATH-shadow `hostnamectl`, `ip`, `dnsdomainname`,
-# `resolvectl`, `dig`, `timeout`, `hostname` so they produce controlled output.
+# Strategy: PATH-shadow `hostnamectl`, `ip`, `resolvectl`, `dig`,
+# `timeout`, `hostname` so they produce controlled output.
 # Use the test-only _APPCORE_HOSTNAME_HOSTS_FILE / _APPCORE_HOSTNAME_HOSTNAME_FILE
 # overrides to point /etc/hosts and /etc/hostname at temp files.
 #
@@ -20,6 +20,7 @@ setup() {
     # Source dependencies first so hostname.sh's auto-source skips.
     source "${LIB_DIR}/identity.sh"
     source "${LIB_DIR}/tui.sh"
+    source "${LIB_DIR}/detect-net.sh"
     source "${LIB_DIR}/hostname.sh"
 
     # Test fixtures for /etc/hosts and /etc/hostname.
@@ -59,7 +60,7 @@ EOF
     chmod +x "${FAKEBIN}/${name}"
 }
 
-# Default hostname/ip/resolvectl/dig/dnsdomainname mocks for a known
+# Default hostname/ip/resolvectl/dig mocks for a known
 # starting state.
 default_mocks() {
     fake_cmd_args hostname '
@@ -76,7 +77,6 @@ esac
 '
     fake_cmd_args resolvectl 'echo ""'
     fake_cmd_args dig 'echo ""'
-    fake_cmd_args dnsdomainname 'echo "lan"'
 }
 
 # ============================================================================
@@ -92,7 +92,6 @@ esac
 '
     fake_cmd_args dig 'echo "should-not-be-used.ptr.lan."'
     fake_cmd_args ip 'echo "2: ens33    inet 10.10.10.40/24 scope global ens33"'
-    fake_cmd_args dnsdomainname 'echo "ignored.lan"'
     out=$(appcore_hostname_default_domain)
     [ "$out" = "corp.example" ]
 }
@@ -101,25 +100,23 @@ esac
     fake_cmd_args resolvectl 'echo ""'
     fake_cmd_args ip 'echo "2: ens33    inet 10.10.10.40/24 scope global ens33"'
     fake_cmd_args dig 'echo "host.ptr-source.lan."'
-    fake_cmd_args dnsdomainname 'echo "ignored"'
     out=$(appcore_hostname_default_domain)
     [ "$out" = "ptr-source.lan" ]
 }
 
-@test "default_domain: falls back to dnsdomainname when both above empty" {
+@test "default_domain: does not reuse the configured hostname domain" {
     fake_cmd_args resolvectl 'echo ""'
     fake_cmd_args ip 'echo ""'
     fake_cmd_args dig 'echo ""'
     fake_cmd_args dnsdomainname 'echo "fallback.lan"'
     out=$(appcore_hostname_default_domain)
-    [ "$out" = "fallback.lan" ]
+    [ -z "$out" ]
 }
 
 @test "default_domain: empty when nothing usable" {
     fake_cmd_args resolvectl 'echo ""'
     fake_cmd_args ip 'echo ""'
     fake_cmd_args dig 'echo ""'
-    fake_cmd_args dnsdomainname 'echo ""'
     out=$(appcore_hostname_default_domain)
     [ -z "$out" ]
 }
@@ -132,7 +129,6 @@ esac
 '
     fake_cmd_args ip 'echo "2: ens33    inet 10.10.10.40/24 scope global ens33"'
     fake_cmd_args dig 'echo "host.good.lan."'
-    fake_cmd_args dnsdomainname 'echo ""'
     out=$(appcore_hostname_default_domain)
     [ "$out" = "good.lan" ]
 }

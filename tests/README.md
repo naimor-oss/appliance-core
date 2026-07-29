@@ -27,5 +27,5 @@ confirmation is needed.
 - Failure output points at the file:line of the assertion plus
   the observed vs expected values.
 
-Current total: 184 cases across `apt-helpers`, `compliance`,
-`detect-net`, `hostname`, `identity`, `netconfig`, and `tui`.
+The suite covers `apt-helpers`, `compliance`, `detect-net`, `hostname`,
+`identity`, `netconfig`, `timezone`, and `tui`.

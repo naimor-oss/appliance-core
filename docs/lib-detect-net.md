@@ -40,10 +40,11 @@ Populate the `APPCORE_DET_*` exported variables from live state.
 
 - `cache_path` (optional): path to a file written by a previous
   `appcore_detect_net_write_cache` call. When given AND a live
-  probe came back empty for some field, the cached value for THAT
-  field is used as a fallback. Live wins outright when non-empty;
-  empty live + cache-present = cache used; empty live + no cache =
-  empty.
+  probe came back empty for some field, a cached contextual value is
+  used only when the live IP/gateway still match the cached network.
+  A host with no live IP or gateway may use its complete last-known
+  snapshot for an offline boot. This prevents a domain or resolver
+  from a build/previous network leaking into a new deployment.
 
 **Side effects**: none. Read-only network probes (`ip`, `resolvectl`,
 `dig`).
@@ -60,6 +61,7 @@ Populate the `APPCORE_DET_*` exported variables from live state.
 | `APPCORE_DET_PTR_NAME` | `${APPCORE_DET_PTR_FQDN%%.*}` | the short part. Empty if no PTR. |
 | `APPCORE_DET_PTR_DOMAIN` | `${APPCORE_DET_PTR_FQDN#*.}` | the domain part. Empty if PTR has no dot. |
 | `APPCORE_DET_EFFECTIVE_DOMAIN` | `${DHCP_DOMAIN:-$PTR_DOMAIN}` | DHCP wins when both available. |
+| `APPCORE_DET_EFFECTIVE_DOMAIN_SOURCE` | detector decision | `dhcp`, `ptr`, or empty. |
 
 **Failure modes** (all non-fatal; affected variables empty):
 
@@ -101,7 +103,7 @@ appcore_detect_net_write_cache /var/lib/<appliance>-detected.env
 source /usr/local/lib/appliance-core/detect-net.sh
 appcore_detect_net_init /var/lib/<appliance>-detected.env
 # APPCORE_DET_* now reflect live IP / PTR / DHCP-domain, with
-# cached values filling in only when a live probe came back empty.
+# matching-network cache values filling transiently empty probes.
 ```
 
 ### Pattern B — strict-live, no cache
@@ -142,7 +144,8 @@ test cases cover at minimum:
 - PTR with no dot (e.g. `localhost`): `NAME` set, `DOMAIN` empty.
 - DHCP-domain with `~` prefix: `~` stripped, name kept.
 - DHCP-domain `"."`: skipped, next entry tried.
-- Cache fallback: live PTR empty → cached PTR used.
+- Cache fallback: live PTR empty on the same network → cached PTR used.
+- Cache isolation: changed IP/gateway → cached DNS/domain/PTR ignored.
 - Cache override: live PTR non-empty → cached PTR ignored even if
   different.
 - `appcore_detect_net_write_cache` round-trip: write then init with

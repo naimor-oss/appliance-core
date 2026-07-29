@@ -36,12 +36,13 @@ was prepared — recorded by each consumer into
 
 | Lib | Status | Contract |
 | --- | --- | --- |
-| `detect-net.sh` | landed v0.1.0 — 9/9 unit tests green | [`../docs/lib-detect-net.md`](../docs/lib-detect-net.md) |
+| `detect-net.sh` | landed — live network context with network-scoped cache fallback | [`../docs/lib-detect-net.md`](../docs/lib-detect-net.md) |
 | `identity.sh` | landed v0.10.0 — 64/64 unit tests green (added smb_name primitive accepting trailing-`$` hidden marker) | [`../docs/lib-identity.md`](../docs/lib-identity.md) |
 | `tui.sh` | landed v0.11.0 — 30/31 unit tests green (1 skipped on macOS; added show_text for backslash-safe verbatim body display) | [`../docs/lib-tui.md`](../docs/lib-tui.md) |
-| `hostname.sh` | landed v0.8.0 — 21/21 unit tests green (depends on identity + tui; added align_to_realm for post-join /etc/hosts re-write) | [`../docs/lib-hostname.md`](../docs/lib-hostname.md) |
+| `hostname.sh` | landed — canonical detected domain plus safe hostname/hosts alignment | [`../docs/lib-hostname.md`](../docs/lib-hostname.md) |
 | `apt-helpers.sh` | landed v0.5.0 — 11/11 unit tests green (2 skipped on Mac) | [`../docs/lib-apt-helpers.md`](../docs/lib-apt-helpers.md) |
-| `netconfig.sh` | landed v0.11.1 — 19/19 unit tests green (preserves a caller's cached DHCP DNS when live detection is empty) | [`../docs/lib-netconfig.md`](../docs/lib-netconfig.md) |
+| `netconfig.sh` | landed — netplan render/apply and single-NIC TUI | [`../docs/lib-netconfig.md`](../docs/lib-netconfig.md) |
+| `timezone.sh` | landed v0.12.0 — bounded, validated suggestion with visible failure reason | [`../docs/lib-timezone.md`](../docs/lib-timezone.md) |
 | `console-wizard.sh` | future | — |
 | `motd.sh` | future | — |
 
