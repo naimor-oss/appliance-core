@@ -42,7 +42,7 @@ was prepared — recorded by each consumer into
 | `hostname.sh` | landed — canonical detected domain plus safe hostname/hosts alignment | [`../docs/lib-hostname.md`](../docs/lib-hostname.md) |
 | `apt-helpers.sh` | landed v0.5.0 — 11/11 unit tests green (2 skipped on Mac) | [`../docs/lib-apt-helpers.md`](../docs/lib-apt-helpers.md) |
 | `netconfig.sh` | landed — netplan render/apply and single-NIC TUI | [`../docs/lib-netconfig.md`](../docs/lib-netconfig.md) |
-| `timezone.sh` | landed v0.12.0 — bounded, validated suggestion with visible failure reason | [`../docs/lib-timezone.md`](../docs/lib-timezone.md) |
+| `timezone.sh` | landed v0.13.1 — DHCP-first, bounded geolocation fallback, and visible failure reason | [`../docs/lib-timezone.md`](../docs/lib-timezone.md) |
 | `console-wizard.sh` | future | — |
 | `motd.sh` | future | — |
 
