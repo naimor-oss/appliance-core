@@ -11,7 +11,7 @@
 #
 # Public surface:
 #
-#   appcore_hostname_default_domain [cache_path]
+#   appcore_hostname_default_domain [cache_path] [interface]
 #       Print the canonical network detector's effective domain for an
 #       unprovisioned host. Never falls back to the configured hostname,
 #       which can contain a build-time or previous-network domain.
@@ -22,7 +22,7 @@
 #       canonical line). Returns non-zero on validator failure or
 #       hostnamectl failure. Idempotent.
 #
-#   appcore_hostname_change_tui [<current_short>] [<domain_override>]
+#   appcore_hostname_change_tui [<current_short>] [<domain_override>] [<interface>]
 #       Interactive TUI flow. Prompts for short name (validator =
 #       NetBIOS subset). Domain auto-detected unless overridden. On
 #       success: applies, sets exported APPCORE_HOSTNAME_NEW_FQDN.
@@ -61,7 +61,8 @@ command -v appcore_detect_net_init >/dev/null 2>&1 || \
 
 appcore_hostname_default_domain() {
     local cache="${1:-}"
-    appcore_detect_net_init "$cache" >/dev/null 2>&1 || true
+    local iface="${2:-}"
+    appcore_detect_net_init "$cache" "$iface" >/dev/null 2>&1 || true
     local candidate
     for candidate in "${APPCORE_DET_DHCP_DOMAIN:-}" "${APPCORE_DET_PTR_DOMAIN:-}"; do
         if [[ -n "$candidate" ]] && appcore_id_domain_validate "$candidate"; then
@@ -150,6 +151,7 @@ appcore_hostname_apply_safe() {
 appcore_hostname_change_tui() {
     local cur_short="${1:-}"
     local domain_override="${2:-}"
+    local iface="${3:-}"
     APPCORE_HOSTNAME_NEW_FQDN=""
     export APPCORE_HOSTNAME_NEW_FQDN
 
@@ -161,10 +163,10 @@ appcore_hostname_change_tui() {
             domain="$domain_override"
         else
             echo "appcore_hostname: ignoring invalid domain override: $domain_override" >&2
-            domain=$(appcore_hostname_default_domain)
+            domain=$(appcore_hostname_default_domain "" "$iface")
         fi
     else
-        domain=$(appcore_hostname_default_domain)
+        domain=$(appcore_hostname_default_domain "" "$iface")
     fi
 
     if [[ "$domain" == *.local ]]; then
@@ -188,9 +190,11 @@ appcore_hostname_change_tui() {
         return 1
     fi
 
-    local ip
-    ip=$(ip -o -4 addr show scope global 2>/dev/null \
-         | awk 'NR==1 {sub(/\/.*$/,"",$4); print $4}')
+    # Resolve the address through the same interface-aware detector used
+    # for the domain. On a proxy, the isolated legacy NIC may sort before
+    # the LAN NIC and must never be written into the LAN FQDN host entry.
+    appcore_detect_net_init "" "$iface" >/dev/null 2>&1 || true
+    local ip="${APPCORE_DET_IP:-}"
 
     if ! appcore_hostname_apply_safe "$new_short" "$domain" "$ip"; then
         whiptail --title "Hostname" --msgbox \

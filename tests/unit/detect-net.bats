@@ -19,7 +19,7 @@ setup() {
 
 teardown() {
     [ -n "${FAKEBIN:-}" ] && rm -rf "$FAKEBIN"
-    unset APPCORE_DET_IP APPCORE_DET_GATEWAY APPCORE_DET_DHCP_DNS \
+    unset APPCORE_DET_IFACE APPCORE_DET_IP APPCORE_DET_GATEWAY APPCORE_DET_DHCP_DNS \
           APPCORE_DET_DHCP_DOMAIN APPCORE_DET_PTR_FQDN \
           APPCORE_DET_PTR_NAME APPCORE_DET_PTR_DOMAIN \
           APPCORE_DET_EFFECTIVE_DOMAIN APPCORE_DET_EFFECTIVE_DOMAIN_SOURCE
@@ -81,6 +81,7 @@ esac
     source "${LIB_DIR}/detect-net.sh"
     appcore_detect_net_init
 
+    [ "$APPCORE_DET_IFACE"             = "ens33" ]
     [ "$APPCORE_DET_IP"                = "192.168.10.42" ]
     [ "$APPCORE_DET_GATEWAY"           = "192.168.10.1" ]
     [ "$APPCORE_DET_DHCP_DNS"          = "192.168.10.1" ]
@@ -90,6 +91,76 @@ esac
     [ "$APPCORE_DET_PTR_DOMAIN"        = "example.lan" ]
     [ "$APPCORE_DET_EFFECTIVE_DOMAIN"  = "example.lan" ]
     [ "$APPCORE_DET_EFFECTIVE_DOMAIN_SOURCE" = "dhcp" ]
+}
+
+# ---------- interface isolation ---------------------------------------------
+
+@test "default-route NIC owns IP, DNS, domain, and PTR on a multi-NIC host" {
+    fake_cmd_args ip '
+case "$*" in
+    *"-o -4 addr show scope global"*)
+        echo "2: eth1    inet 172.29.137.5/24 scope global eth1"
+        echo "3: eth0    inet 10.20.30.40/24 scope global dynamic eth0"
+        ;;
+    *"-4 route show default"*) echo "default via 10.20.30.1 dev eth0";;
+esac
+'
+    fake_cmd_args resolvectl '
+case "$*" in
+    "dns eth0")    echo "Link 3 (eth0): 10.20.30.10";;
+    "domain eth0") echo "Link 3 (eth0): factory.example";;
+    dns)            echo "Link 2 (eth1): 172.29.137.1"; echo "Link 3 (eth0): 10.20.30.10";;
+    domain)         echo "Link 2 (eth1): legacy.invalid"; echo "Link 3 (eth0): factory.example";;
+esac
+'
+    fake_cmd_args dig '
+[[ "$*" == *"10.20.30.40"* ]] || exit 9
+echo "smbproxy-1.factory.example."
+'
+    fake_timeout_passthrough
+
+    source "${LIB_DIR}/detect-net.sh"
+    appcore_detect_net_init
+
+    [ "$APPCORE_DET_IFACE" = "eth0" ]
+    [ "$APPCORE_DET_IP" = "10.20.30.40" ]
+    [ "$APPCORE_DET_GATEWAY" = "10.20.30.1" ]
+    [ "$APPCORE_DET_DHCP_DNS" = "10.20.30.10" ]
+    [ "$APPCORE_DET_DHCP_DOMAIN" = "factory.example" ]
+    [ "$APPCORE_DET_PTR_FQDN" = "smbproxy-1.factory.example" ]
+}
+
+@test "explicit NIC selection ignores another NIC even when it is listed first" {
+    fake_cmd_args ip '
+case "$*" in
+    *"-o -4 addr show scope global"*)
+        echo "2: eth1    inet 172.29.137.5/24 scope global eth1"
+        echo "3: eth0    inet 10.20.30.40/24 scope global dynamic eth0"
+        ;;
+    *"-4 route show default"*) echo "default via 10.20.30.1 dev eth0";;
+esac
+'
+    fake_cmd_args resolvectl '
+case "$*" in
+    "dns eth0")    echo "Link 3 (eth0): 10.20.30.10";;
+    "domain eth0") echo "Link 3 (eth0): factory.example";;
+    *)              echo "unexpected unscoped resolvectl call" >&2; exit 8;;
+esac
+'
+    fake_cmd_args dig '
+[[ "$*" == *"10.20.30.40"* ]] || exit 9
+echo "smbproxy-1.factory.example."
+'
+    fake_timeout_passthrough
+
+    source "${LIB_DIR}/detect-net.sh"
+    appcore_detect_net_init "" eth0
+
+    [ "$APPCORE_DET_IFACE" = "eth0" ]
+    [ "$APPCORE_DET_IP" = "10.20.30.40" ]
+    [ "$APPCORE_DET_GATEWAY" = "10.20.30.1" ]
+    [ "$APPCORE_DET_DHCP_DNS" = "10.20.30.10" ]
+    [ "$APPCORE_DET_DHCP_DOMAIN" = "factory.example" ]
 }
 
 # ---------- failure modes ---------------------------------------------------
@@ -276,6 +347,37 @@ EOF
     [ -z "$APPCORE_DET_EFFECTIVE_DOMAIN_SOURCE" ]
 }
 
+@test "cache from a different interface cannot restore legacy-side context" {
+    fake_cmd_args ip '
+case "$*" in
+    *"-o -4 addr show scope global"*) echo "3: eth0    inet 10.20.30.40/24 scope global eth0";;
+    *"-4 route show default"*) echo "default via 10.20.30.1 dev eth0";;
+esac
+'
+    fake_cmd_args resolvectl 'echo ""'
+    fake_cmd_args dig 'echo ""'
+    fake_timeout_passthrough
+
+    local cache="${BATS_TMPDIR}/wrong-interface.env"
+    cat > "$cache" <<'EOF'
+APPCORE_DET_IFACE="eth1"
+APPCORE_DET_IP="10.20.30.40"
+APPCORE_DET_GATEWAY="10.20.30.1"
+APPCORE_DET_DHCP_DNS="172.29.137.1"
+APPCORE_DET_DHCP_DOMAIN="legacy.invalid"
+APPCORE_DET_PTR_DOMAIN="legacy.invalid"
+EOF
+
+    source "${LIB_DIR}/detect-net.sh"
+    appcore_detect_net_init "$cache" eth0
+
+    [ "$APPCORE_DET_IFACE" = "eth0" ]
+    [ -z "$APPCORE_DET_DHCP_DNS" ]
+    [ -z "$APPCORE_DET_DHCP_DOMAIN" ]
+    [ -z "$APPCORE_DET_PTR_DOMAIN" ]
+    [ -z "$APPCORE_DET_EFFECTIVE_DOMAIN" ]
+}
+
 @test "live PTR overrides cache (the regression we just fixed)" {
     fake_cmd_args ip '
 case "$*" in
@@ -334,7 +436,7 @@ esac
     fake_cmd_args dig 'echo ""'
 
     # Clear vars to prove they get re-populated from the cache.
-    unset APPCORE_DET_IP APPCORE_DET_GATEWAY APPCORE_DET_DHCP_DNS \
+    unset APPCORE_DET_IFACE APPCORE_DET_IP APPCORE_DET_GATEWAY APPCORE_DET_DHCP_DNS \
           APPCORE_DET_DHCP_DOMAIN APPCORE_DET_PTR_FQDN \
           APPCORE_DET_PTR_NAME APPCORE_DET_PTR_DOMAIN \
           APPCORE_DET_EFFECTIVE_DOMAIN APPCORE_DET_EFFECTIVE_DOMAIN_SOURCE

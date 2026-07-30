@@ -49,10 +49,10 @@ so a deployed product appliance has no runtime dependency on
 
 ## Status
 
-**Current shared-library release: `lib/VERSION=0.12.0`.**
+**Current shared-library release: `lib/VERSION=0.13.0`.**
 
-Six libraries are landed (`detect-net`, `identity`, `tui`, `hostname`,
-`apt-helpers`, and `netconfig`) with 184 Bats cases. Both product
+Seven libraries are landed (`detect-net`, `identity`, `tui`, `hostname`,
+`apt-helpers`, `netconfig`, and `timezone`) with 194 Bats cases. Both product
 appliances vendor them during image preparation and pass the 12-check
 downstream compliance suite in `bin/compliance-check.sh`.
 

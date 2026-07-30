@@ -36,7 +36,7 @@ was prepared — recorded by each consumer into
 
 | Lib | Status | Contract |
 | --- | --- | --- |
-| `detect-net.sh` | landed — live network context with network-scoped cache fallback | [`../docs/lib-detect-net.md`](../docs/lib-detect-net.md) |
+| `detect-net.sh` | landed v0.13.0 — interface-scoped live context with network-scoped cache fallback | [`../docs/lib-detect-net.md`](../docs/lib-detect-net.md) |
 | `identity.sh` | landed v0.10.0 — 64/64 unit tests green (added smb_name primitive accepting trailing-`$` hidden marker) | [`../docs/lib-identity.md`](../docs/lib-identity.md) |
 | `tui.sh` | landed v0.11.0 — 30/31 unit tests green (1 skipped on macOS; added show_text for backslash-safe verbatim body display) | [`../docs/lib-tui.md`](../docs/lib-tui.md) |
 | `hostname.sh` | landed — canonical detected domain plus safe hostname/hosts alignment | [`../docs/lib-hostname.md`](../docs/lib-hostname.md) |

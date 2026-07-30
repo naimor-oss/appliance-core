@@ -72,6 +72,7 @@ esac
 '
     fake_cmd_args ip '
 case "$*" in
+    *"-4 route show default"*) echo "default via 10.10.10.1 dev ens33";;
     *"-o -4 addr show scope global"*) echo "2: ens33    inet 10.10.10.40/24 scope global ens33";;
 esac
 '
@@ -91,14 +92,24 @@ case "$1" in
 esac
 '
     fake_cmd_args dig 'echo "should-not-be-used.ptr.lan."'
-    fake_cmd_args ip 'echo "2: ens33    inet 10.10.10.40/24 scope global ens33"'
+    fake_cmd_args ip '
+case "$*" in
+    *"-4 route show default"*) echo "default via 10.10.10.1 dev ens33";;
+    *"-o -4 addr show scope global"*) echo "2: ens33    inet 10.10.10.40/24 scope global ens33";;
+esac
+'
     out=$(appcore_hostname_default_domain)
     [ "$out" = "corp.example" ]
 }
 
 @test "default_domain: falls back to PTR when DHCP empty" {
     fake_cmd_args resolvectl 'echo ""'
-    fake_cmd_args ip 'echo "2: ens33    inet 10.10.10.40/24 scope global ens33"'
+    fake_cmd_args ip '
+case "$*" in
+    *"-4 route show default"*) echo "default via 10.10.10.1 dev ens33";;
+    *"-o -4 addr show scope global"*) echo "2: ens33    inet 10.10.10.40/24 scope global ens33";;
+esac
+'
     fake_cmd_args dig 'echo "host.ptr-source.lan."'
     out=$(appcore_hostname_default_domain)
     [ "$out" = "ptr-source.lan" ]
@@ -127,10 +138,56 @@ case "$1" in
     domain) echo "Link 2 (ens33): -bad-leading-hyphen";;
 esac
 '
-    fake_cmd_args ip 'echo "2: ens33    inet 10.10.10.40/24 scope global ens33"'
+    fake_cmd_args ip '
+case "$*" in
+    *"-4 route show default"*) echo "default via 10.10.10.1 dev ens33";;
+    *"-o -4 addr show scope global"*) echo "2: ens33    inet 10.10.10.40/24 scope global ens33";;
+esac
+'
     fake_cmd_args dig 'echo "host.good.lan."'
     out=$(appcore_hostname_default_domain)
     [ "$out" = "good.lan" ]
+}
+
+# ============================================================================
+# change_tui — interface ownership
+# ============================================================================
+
+@test "change_tui: writes the selected LAN NIC address on a multi-NIC host" {
+    fake_cmd_args hostname '
+case "$1" in
+    -s) echo "smbproxy-1" ;;
+    *)  echo "smbproxy-1" ;;
+esac
+'
+    fake_cmd_args ip '
+case "$*" in
+    *"-4 route show default"*) echo "default via 10.20.30.1 dev eth0";;
+    *"-o -4 addr show scope global"*)
+        echo "2: eth1    inet 172.29.137.5/24 scope global eth1"
+        echo "3: eth0    inet 10.20.30.40/24 scope global dynamic eth0"
+        ;;
+esac
+'
+    fake_cmd_args resolvectl '
+case "$*" in
+    "dns eth0")    echo "Link 3 (eth0): 10.20.30.10";;
+    "domain eth0") echo "Link 3 (eth0): factory.example";;
+esac
+'
+    fake_cmd_args dig 'echo "smbproxy-1.factory.example."'
+    appcore_tui_prompt_validated() {
+        printf -v "$1" '%s' "smbproxy-new"
+    }
+    cat > "$HOSTSFILE" <<EOF
+127.0.0.1 localhost
+172.29.137.5 smbproxy-1.stale.test smbproxy-1
+EOF
+
+    appcore_hostname_change_tui "" "factory.example" "eth0"
+
+    grep -qE "^10\.20\.30\.40[[:space:]]+smbproxy-new\.factory\.example[[:space:]]+smbproxy-new$" "$HOSTSFILE"
+    ! grep -qE "^172\.29\.137\.5[[:space:]]+smbproxy-new" "$HOSTSFILE"
 }
 
 # ============================================================================

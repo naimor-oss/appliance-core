@@ -1,7 +1,8 @@
 # `lib/hostname.sh` — contract
 
-**Version**: lands at `lib/VERSION` 0.4.0.
-**Status**: landed. Awaiting first consumer migration.
+**Version**: landed in 0.4.0; interface-scoped hostname context added in
+0.13.0.
+**Status**: landed and consumed by both appliance products.
 
 This is the authoritative reference for the lib's public surface.
 
@@ -37,9 +38,9 @@ embed a build-time or previous-network realm from `/etc/hosts`.
 
 | Function | Signature | Behavior |
 | --- | --- | --- |
-| `appcore_hostname_default_domain` | `[cache_path]` | Initialize `detect-net.sh`, then print its first valid DHCP/PTR domain. A matching-network cache may fill a transiently empty probe. Empty stdout if nothing usable. |
+| `appcore_hostname_default_domain` | `[cache_path] [interface]` | Initialize `detect-net.sh`, then print its first valid DHCP/PTR domain. A matching-network cache may fill a transiently empty probe. Multi-NIC callers pass the LAN interface. Empty stdout if nothing usable. |
 | `appcore_hostname_apply_safe` | `<short> [<domain>] [<ip>]` | Validate short (NetBIOS) + domain (DNS rules); call `hostnamectl set-hostname`, write `/etc/hostname`, rewrite `/etc/hosts` (drop by IP and old short name, then append the canonical line). Returns non-zero on any validator or hostnamectl failure. Idempotent. |
-| `appcore_hostname_change_tui` | `[<current_short>] [<domain_override>]` | Interactive TUI flow. Pre-fills with current short name; pre-uses detected domain (or override). Validates via `appcore_id_netbios_validate`. On success: applies and exports `APPCORE_HOSTNAME_NEW_FQDN`. On Cancel / give-up: returns non-zero, exported var empty. |
+| `appcore_hostname_change_tui` | `[<current_short>] [<domain_override>] [<interface>]` | Interactive TUI flow. Pre-fills with current short name; pre-uses detected domain (or override). The optional interface owns both detection and the `/etc/hosts` address. Validates via `appcore_id_netbios_validate`. On success: applies and exports `APPCORE_HOSTNAME_NEW_FQDN`. On Cancel / give-up: returns non-zero, exported var empty. |
 
 ## Auto-sourced dependencies
 

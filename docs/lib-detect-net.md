@@ -1,8 +1,8 @@
 # `lib/detect-net.sh` — contract
 
-**Version**: 0.1.0 (lands at `lib/VERSION` 0.1.0; semver follows the
-core's release).
-**Status**: landed (Phase 2). Awaiting first consumer migration.
+**Version**: landed in 0.1.0; interface-scoped detection added in 0.13.0.
+SemVer follows the core's release.
+**Status**: landed and consumed by both appliance products.
 
 This is the authoritative reference for the lib's public surface.
 The implementation in `../lib/detect-net.sh` follows; if behavior
@@ -32,7 +32,7 @@ These exclusions are load-bearing — see ADR 0002 §"Excludes" tables.
 
 ## Public surface
 
-### `appcore_detect_net_init [cache_path]`
+### `appcore_detect_net_init [cache_path] [interface]`
 
 Populate the `APPCORE_DET_*` exported variables from live state.
 
@@ -45,6 +45,10 @@ Populate the `APPCORE_DET_*` exported variables from live state.
   A host with no live IP or gateway may use its complete last-known
   snapshot for an offline boot. This prevents a domain or resolver
   from a build/previous network leaking into a new deployment.
+- `interface` (optional): interface that owns the deployment/LAN
+  context. When omitted, the first default-route interface is used.
+  Multi-NIC products must pass their persisted LAN-role interface so
+  an isolated/static interface cannot contribute IP, DNS, domain, or PTR.
 
 **Side effects**: none. Read-only network probes (`ip`, `resolvectl`,
 `dig`).
@@ -53,10 +57,11 @@ Populate the `APPCORE_DET_*` exported variables from live state.
 
 | Variable | Source | Notes |
 | --- | --- | --- |
-| `APPCORE_DET_IP` | `ip -o -4 addr show scope global` (first match) | IPv4 only; IPv6 not addressed in v1. |
-| `APPCORE_DET_GATEWAY` | `ip route show default` | next-hop only (no metric, no dev). |
-| `APPCORE_DET_DHCP_DNS` | `resolvectl dns` per-link | space-separated. |
-| `APPCORE_DET_DHCP_DOMAIN` | `resolvectl domain` per-link | first non-`.` non-`~` entry; preserves DHCP search-domain semantics. |
+| `APPCORE_DET_IFACE` | explicit interface, else default route | Empty when neither is available. |
+| `APPCORE_DET_IP` | global IPv4 on `APPCORE_DET_IFACE` | IPv4 only; IPv6 not addressed in v1. |
+| `APPCORE_DET_GATEWAY` | default route through `APPCORE_DET_IFACE` | next-hop only (no metric, no dev). |
+| `APPCORE_DET_DHCP_DNS` | `resolvectl dns APPCORE_DET_IFACE` | space-separated. |
+| `APPCORE_DET_DHCP_DOMAIN` | `resolvectl domain APPCORE_DET_IFACE` | first non-`.` non-`~` entry; preserves DHCP search-domain semantics. |
 | `APPCORE_DET_PTR_FQDN` | `dig +short -x <ip>`, 5s timeout | trailing dot stripped. |
 | `APPCORE_DET_PTR_NAME` | `${APPCORE_DET_PTR_FQDN%%.*}` | the short part. Empty if no PTR. |
 | `APPCORE_DET_PTR_DOMAIN` | `${APPCORE_DET_PTR_FQDN#*.}` | the domain part. Empty if PTR has no dot. |
@@ -65,7 +70,10 @@ Populate the `APPCORE_DET_*` exported variables from live state.
 
 **Failure modes** (all non-fatal; affected variables empty):
 
-- No default route → `IP`/`GATEWAY` empty.
+- No explicit interface and no default route → interface, IP, gateway,
+  DHCP DNS/domain, and PTR are empty. With an explicit interface but no
+  default route, gateway is empty while interface-scoped probes may still
+  succeed.
 - `resolvectl` not installed or not used (some non-systemd-resolved
   setups) → `DHCP_DNS` / `DHCP_DOMAIN` empty.
 - `dig` missing or times out (5s bound) → `PTR_*` empty.
@@ -104,6 +112,12 @@ source /usr/local/lib/appliance-core/detect-net.sh
 appcore_detect_net_init /var/lib/<appliance>-detected.env
 # APPCORE_DET_* now reflect live IP / PTR / DHCP-domain, with
 # matching-network cache values filling transiently empty probes.
+```
+
+For a multi-NIC appliance:
+
+```bash
+appcore_detect_net_init /var/lib/<appliance>-detected.env "$LAN_IFACE"
 ```
 
 ### Pattern B — strict-live, no cache
