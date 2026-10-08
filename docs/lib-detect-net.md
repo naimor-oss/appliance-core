@@ -150,3 +150,17 @@ test cases cover at minimum:
 
 Run via `lab/scenarios/unit-tests.sh` against the blank appliance
 `golden-image` checkpoint.
+
+## Untrusted network input (v0.12.0)
+
+DHCP options and reverse-DNS answers come from the network. Since
+v0.12.0 every detected value is checked against the character set its
+field can legitimately use (IPv4 dotted quad; DNS server list of hex,
+`:`, `.`, and spaces; hostnames and domains of letters, digits, `.`, and
+`-`). Anything else is cleared before it is used, cached, or returned.
+The same check runs on values read back from a cache written by an
+older release. `appcore_detect_net_write_cache` writes atomically
+(temp file, then rename). Consumers must read the cache with
+`appcore_kv_load` (see [`lib-kvstate.md`](lib-kvstate.md)), never with
+`source`.
+
