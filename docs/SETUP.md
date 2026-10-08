@@ -9,6 +9,13 @@ If the existing `samba-addc-appliance` lab is already up, you reuse
 most of it — see [Reusing the existing lab](#reusing-the-existing-lab)
 below.
 
+> **Workstation (2026-10):** the supported workstation is Windows 11 with
+> WSL2 and Hyper-V. Set it up with
+> [`../../dev-commons/WSL2-LAB-SETUP.md`](../../dev-commons/WSL2-LAB-SETUP.md);
+> the lab scripts pick the ISO share path, seed-ISO builder and checksum
+> tool through `lab-kit/lib/lab-host.sh` (`/mnt/d/ISO` on WSL2). The
+> macOS instructions below still describe the legacy Mac workflow.
+
 ## Sibling layout
 
 ```text
