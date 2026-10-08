@@ -307,3 +307,50 @@ esac
     [ "$APPCORE_DET_PTR_FQDN" = "host7.roundtrip.test" ]
     [ "$APPCORE_DET_DHCP_DOMAIN" = "roundtrip.test" ]
 }
+
+# ---------- untrusted network input (code-review session plan 05) ----------
+
+@test "hostile PTR and DHCP values are cleared, never cached, never executed" {
+    pwned="${FAKEBIN}/pwned"
+    fake_cmd_args ip '
+case "$*" in
+    *"-o -4 addr show scope global"*) echo "2: ens33    inet 192.168.10.42/24 scope global ens33";;
+    *"route show default"*)            echo "default via 192.168.10.1 dev ens33";;
+esac
+'
+    fake_cmd_args resolvectl '
+case "$1" in
+    dns)    echo "Global:"; echo "Link 2 (ens33): 192.168.10.1";;
+    domain) echo "Global:"; echo "Link 2 (ens33): evil\"\$(touch '"$pwned"').lan";;
+esac
+'
+    fake_cmd_args dig 'printf "%s\n" "x\"\$(touch '"$pwned"')\".evil.lan."'
+    fake_timeout_passthrough
+
+    source "${LIB_DIR}/detect-net.sh"
+    appcore_detect_net_init
+    [ -z "$APPCORE_DET_PTR_FQDN" ]
+    [ -z "$APPCORE_DET_PTR_NAME" ]
+    [ -z "$APPCORE_DET_DHCP_DOMAIN" ]
+    [ "$APPCORE_DET_IP" = "192.168.10.42" ]
+
+    appcore_detect_net_write_cache "${FAKEBIN}/cache.env"
+    ! grep -qE '[`$]|touch' "${FAKEBIN}/cache.env"
+    # Even a consumer that still sources the cache cannot be hijacked.
+    bash -c 'source "$1"' _ "${FAKEBIN}/cache.env"
+    [ ! -e "$pwned" ]
+}
+
+@test "a hostile cache from an older release is sanitized on read" {
+    fake_cmd_args ip 'true'
+    fake_cmd_args resolvectl 'true'
+    fake_cmd_args dig 'true'
+    fake_timeout_passthrough
+    printf '%s\n' 'APPCORE_DET_PTR_FQDN="a`id`.lan"' 'APPCORE_DET_PTR_NAME="a;b"' \
+        'APPCORE_DET_IP="192.0.2.5"' > "${FAKEBIN}/old.env"
+    source "${LIB_DIR}/detect-net.sh"
+    appcore_detect_net_init "${FAKEBIN}/old.env"
+    [ -z "$APPCORE_DET_PTR_FQDN" ]
+    [ -z "$APPCORE_DET_PTR_NAME" ]
+    [ "$APPCORE_DET_IP" = "192.0.2.5" ]
+}

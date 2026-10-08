@@ -60,6 +60,26 @@ _appcore_dn_read_cache() {
     ' "$path"
 }
 
+# DHCP and reverse-DNS answers come from the network and are untrusted
+# (code-review session plan 05): a PTR record can carry quotes, `$( )`,
+# backticks, or newlines. Clear any detected value outside the character set
+# its field can legitimately use, so nothing hostile reaches the cache file
+# or a consumer.
+_appcore_dn_sanitize() {
+    local f var re
+    for f in IP GATEWAY DHCP_DNS DHCP_DOMAIN PTR_FQDN PTR_NAME PTR_DOMAIN; do
+        var="APPCORE_DET_${f}"
+        case "$f" in
+            IP|GATEWAY)  re='^[0-9]{1,3}(\.[0-9]{1,3}){3}$' ;;
+            DHCP_DNS)    re='^[0-9A-Fa-f:.]+( [0-9A-Fa-f:.]+)*$' ;;
+            *)           re='^[A-Za-z0-9]([A-Za-z0-9.-]{0,252}[A-Za-z0-9])?$' ;;
+        esac
+        if [[ -n "${!var}" && ! "${!var}" =~ $re ]]; then
+            printf -v "$var" '%s' ""
+        fi
+    done
+}
+
 # ----- public surface --------------------------------------------------------
 
 appcore_detect_net_init() {
@@ -94,6 +114,8 @@ appcore_detect_net_init() {
         fi
     fi
 
+    _appcore_dn_sanitize
+
     # Cache-fallback per field. Live wins outright when non-empty;
     # empty live keeps cache (transient flake protection).
     if [[ -n "$cache" && -r "$cache" ]]; then
@@ -106,6 +128,8 @@ appcore_detect_net_init() {
                 printf -v "$var" '%s' "$val"
             fi
         done
+        # A cache written by an older release was never validated.
+        _appcore_dn_sanitize
     fi
 
     APPCORE_DET_EFFECTIVE_DOMAIN="${APPCORE_DET_DHCP_DOMAIN:-$APPCORE_DET_PTR_DOMAIN}"
@@ -118,8 +142,12 @@ appcore_detect_net_init() {
 
 appcore_detect_net_write_cache() {
     local path="${1:?path required}"
-    local dir; dir=$(dirname "$path")
+    local dir tmp; dir=$(dirname "$path")
     [[ -d "$dir" ]] || mkdir -p "$dir"
+    _appcore_dn_sanitize
+    APPCORE_DET_EFFECTIVE_DOMAIN="${APPCORE_DET_DHCP_DOMAIN:-$APPCORE_DET_PTR_DOMAIN}"
+    # Atomic: a reader never sees a half-written cache.
+    tmp=$(mktemp "$dir/.detect-net.XXXXXX") || return 1
     {
         printf '# Written by appliance-core detect-net.sh at %s\n' \
                "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -131,6 +159,5 @@ appcore_detect_net_write_cache() {
         printf 'APPCORE_DET_PTR_NAME="%s"\n'          "${APPCORE_DET_PTR_NAME:-}"
         printf 'APPCORE_DET_PTR_DOMAIN="%s"\n'        "${APPCORE_DET_PTR_DOMAIN:-}"
         printf 'APPCORE_DET_EFFECTIVE_DOMAIN="%s"\n'  "${APPCORE_DET_EFFECTIVE_DOMAIN:-}"
-    } > "$path"
-    chmod 0644 "$path"
+    } > "$tmp" && chmod 0644 "$tmp" && mv -f "$tmp" "$path" || { rm -f "$tmp"; return 1; }
 }
