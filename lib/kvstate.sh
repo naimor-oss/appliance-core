@@ -12,10 +12,13 @@
 #     <blank>              (ignored)
 #     KEY="value"          KEY is [A-Z_][A-Z0-9_]*
 #     KEY=value            the same, unquoted (no spaces)
-# A value may not contain ", `, \, or control characters, and may contain
-# $ only as its last character (Windows hidden shares such as `Files$`;
-# inside double quotes a $ before the closing quote is literal, so the file
-# stays safe to source). appcore_kv_write refuses anything else. Unknown keys, duplicate
+# A value may not contain " ` or control characters. $ is allowed only as
+# the last character (Windows hidden shares such as `Files$`). \ is allowed
+# only before an ordinary character (`DOMAIN\Group`), never doubled, before
+# $, or last. Inside double quotes every permitted sequence is literal, so
+# the file stays safe to source and sourcing yields the same value. A bare
+# (unquoted) value may not contain \ or whitespace. appcore_kv_write always
+# quotes and refuses anything else. Unknown keys, duplicate
 # keys, malformed lines, more than 200 lines, and lines over 4096 bytes are
 # rejected. The format stays valid shell, so a rolled-back script that still
 # sources a file written here reads the same values.
@@ -41,12 +44,13 @@
 _APPCORE_KVSTATE_LOADED=1
 
 _APPCORE_KV_KEY_RE='^[A-Z_][A-Z0-9_]*$'
-_APPCORE_KV_QUOTED_RE='^([A-Z_][A-Z0-9_]*)="([^"$`\\]*[$]?)"$'
+_APPCORE_KV_QUOTED_RE='^([A-Z_][A-Z0-9_]*)="(([^"$`\\]|\\[^"$`\\])*[$]?)"$'
 _APPCORE_KV_BARE_RE='^([A-Z_][A-Z0-9_]*)=([^"$`\\[:space:]]*[$]?)$'
+_APPCORE_KV_VALUE_RE='^([^"$`\\]|\\[^"$`\\])*[$]?$'
 
 appcore_kv_value_ok() {
-    local v="$1" body="${1%\$}"
-    [[ "$body" != *[\"\$\`\\]* ]] || return 1
+    local v="$1"
+    [[ "$v" =~ $_APPCORE_KV_VALUE_RE ]] || return 1
     [[ "$v" =~ ^[[:print:]]*$ ]] || return 1
     (( ${#v} <= 4000 ))
 }

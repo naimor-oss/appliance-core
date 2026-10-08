@@ -41,6 +41,21 @@ teardown() {
     [ "$status" -eq 2 ]
 }
 
+@test "DOMAIN\\Group values: a single backslash before a letter is kept and sourceable" {
+    appcore_kv_write "$T/w" 0644 FRONT_GROUP 'LAB\Accounting Users'
+    FRONT_GROUP=""; appcore_kv_load "$T/w" FRONT_GROUP
+    [ "$FRONT_GROUP" = 'LAB\Accounting Users' ]
+    run bash -c 'source "$1"; printf "%s" "$FRONT_GROUP"' _ "$T/w"
+    [ "$output" = 'LAB\Accounting Users' ]
+    for bad in 'a\\b' 'a\$' 'trailing\' 'a\"b'; do
+        run appcore_kv_write "$T/w" 0644 FRONT_GROUP "$bad"
+        [ "$status" -eq 2 ]
+    done
+    printf 'FRONT_GROUP=LAB\\Accounting\n' > "$T/s"   # bare: the shell would drop it
+    run appcore_kv_load "$T/s" FRONT_GROUP
+    [ "$status" -eq 3 ]
+}
+
 @test "load: absent keys are left untouched" {
     PROFILE=keep
     printf 'SHARE_NAME="A"\n' > "$T/s"
@@ -61,7 +76,9 @@ teardown() {
         'SHARE_NAME="a"; touch "$PWNED"' \
         'SHARE_NAME=a;touch$IFS$PWNED' \
         'SHARE_NAME="a\"b"' \
-        'SHARE_NAME="back\slash"' \
+        'SHARE_NAME="double\\backslash"' \
+        'SHARE_NAME="trailing\"' \
+        'SHARE_NAME="esc\$x"' \
         'touch "$PWNED"' \
         'export SHARE_NAME=x' \
         'SHARE_NAME = "spaced"'; do
