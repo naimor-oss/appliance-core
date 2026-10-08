@@ -62,6 +62,7 @@ appcore_tui_strip_ansi() {
 # Print "rows cols" sized to the operator's actual terminal, minus a
 # margin. Defaults: 4-row margin, 4-col margin. Floors at 18x60 so a
 # sane minimum dialog still fits a 24x80 console.
+# shellcheck disable=SC2120 # optional margins are public API; tests pass them
 appcore_tui_size() {
     local margin_rows="${1:-4}"
     local margin_cols="${2:-4}"
