@@ -35,25 +35,35 @@ teardown() {
     [ "$SHARE_NAME" = 'Engineering$' ]
     run bash -c 'source "$1"; printf "%s" "$SHARE_NAME"' _ "$T/w"
     [ "$output" = 'Engineering$' ]
-    run appcore_kv_write "$T/w" 0644 SHARE_NAME 'Eng$ineering'
-    [ "$status" -eq 2 ]
-    run appcore_kv_write "$T/w" 0644 SHARE_NAME 'Eng$$'
-    [ "$status" -eq 2 ]
+    printf 'SHARE_NAME="Eng$ineering"\n' > "$T/s"    # unescaped $ mid-value
+    run appcore_kv_load "$T/s" SHARE_NAME
+    [ "$status" -eq 3 ]
 }
 
-@test "DOMAIN\\Group values: a single backslash before a letter is kept and sourceable" {
+@test "DOMAIN\\Group values: hand-written and written values keep the backslash" {
+    printf 'FRONT_GROUP="LAB\\Accounting Users"\n' > "$T/s"   # legacy hand-written form
+    FRONT_GROUP=""; appcore_kv_load "$T/s" FRONT_GROUP
+    [ "$FRONT_GROUP" = 'LAB\Accounting Users' ]
     appcore_kv_write "$T/w" 0644 FRONT_GROUP 'LAB\Accounting Users'
     FRONT_GROUP=""; appcore_kv_load "$T/w" FRONT_GROUP
     [ "$FRONT_GROUP" = 'LAB\Accounting Users' ]
     run bash -c 'source "$1"; printf "%s" "$FRONT_GROUP"' _ "$T/w"
     [ "$output" = 'LAB\Accounting Users' ]
-    for bad in 'a\\b' 'a\$' 'trailing\' 'a\"b'; do
-        run appcore_kv_write "$T/w" 0644 FRONT_GROUP "$bad"
-        [ "$status" -eq 2 ]
-    done
     printf 'FRONT_GROUP=LAB\\Accounting\n' > "$T/s"   # bare: the shell would drop it
     run appcore_kv_load "$T/s" FRONT_GROUP
     [ "$status" -eq 3 ]
+}
+
+@test "any printable value round-trips, and sourcing the file yields the same value" {
+    for v in 'a\\b' 'a\$' 'trailing\' 'a"b' 'Eng$ineering' '$(touch $PWNED)' \
+             '`touch $PWNED`' '^\\\\WIN-' "it's" 'a;b|c&d<e>f'; do
+        appcore_kv_write "$T/w" 0644 FRONT_GROUP "$v"
+        FRONT_GROUP=""; appcore_kv_load "$T/w" FRONT_GROUP
+        [ "$FRONT_GROUP" = "$v" ]
+        run bash -c 'source "$1"; printf "%s" "$FRONT_GROUP"' _ "$T/w"
+        [ "$output" = "$v" ]
+    done
+    [ ! -e "$PWNED" ]
 }
 
 @test "load: absent keys are left untouched" {
@@ -75,10 +85,13 @@ teardown() {
         'SHARE_NAME="`touch $PWNED`"' \
         'SHARE_NAME="a"; touch "$PWNED"' \
         'SHARE_NAME=a;touch$IFS$PWNED' \
-        'SHARE_NAME="a\"b"' \
-        'SHARE_NAME="double\\backslash"' \
+        'SHARE_NAME="a"b"' \
         'SHARE_NAME="trailing\"' \
-        'SHARE_NAME="esc\$x"' \
+        'SHARE_NAME=a;touch' \
+        'SHARE_NAME=a|touch' \
+        'SHARE_NAME=a&touch' \
+        'SHARE_NAME=a>x' \
+        "SHARE_NAME=it's" \
         'touch "$PWNED"' \
         'export SHARE_NAME=x' \
         'SHARE_NAME = "spaced"'; do
@@ -145,7 +158,9 @@ teardown() {
 @test "write: refuses unsafe values and keys, and leaves the old file alone" {
     appcore_kv_write "$T/s" 0644 SHARE_NAME good
     before=$(cat "$T/s")
-    run appcore_kv_write "$T/s" 0644 SHARE_NAME 'bad$(x)'
+    run appcore_kv_write "$T/s" 0644 SHARE_NAME $'tab\there'
+    [ "$status" -eq 2 ]
+    run appcore_kv_write "$T/s" 0644 SHARE_NAME "$(head -c 4001 /dev/zero | tr '\0' a)"
     [ "$status" -eq 2 ]
     run appcore_kv_write "$T/s" 0644 'lower' value
     [ "$status" -eq 2 ]

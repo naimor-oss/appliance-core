@@ -11,14 +11,16 @@
 #     # comment            (ignored)
 #     <blank>              (ignored)
 #     KEY="value"          KEY is [A-Z_][A-Z0-9_]*
-#     KEY=value            the same, unquoted (no spaces)
-# A value may not contain " ` or control characters. $ is allowed only as
-# the last character (Windows hidden shares such as `Files$`). \ is allowed
-# only before an ordinary character (`DOMAIN\Group`), never doubled, before
-# $, or last. Inside double quotes every permitted sequence is literal, so
-# the file stays safe to source and sourcing yields the same value. A bare
-# (unquoted) value may not contain \ or whitespace. appcore_kv_write always
-# quotes and refuses anything else. Unknown keys, duplicate
+#     KEY=value            the same, unquoted
+# A quoted value follows shell double-quote rules restricted to the inert
+# subset: \\ \$ \" \` are escapes for \ $ " `; a backslash before any other
+# character is literal (`DOMAIN\Group`); an unescaped $ may only be the last
+# character (`Files$`); an unescaped " or ` is never allowed. Sourcing such
+# a line expands nothing and yields exactly the value this parser returns.
+# A bare value may contain only letters, digits and . _ : / @ % + , = -
+# (no shell metacharacters), plus an optional final $. Decoded values must be printable (no control
+# characters) and at most 4000 bytes. appcore_kv_write quotes and escapes
+# every value, so any printable value round-trips. Unknown keys, duplicate
 # keys, malformed lines, more than 200 lines, and lines over 4096 bytes are
 # rejected. The format stays valid shell, so a rolled-back script that still
 # sources a file written here reads the same values.
@@ -44,15 +46,39 @@
 _APPCORE_KVSTATE_LOADED=1
 
 _APPCORE_KV_KEY_RE='^[A-Z_][A-Z0-9_]*$'
-_APPCORE_KV_QUOTED_RE='^([A-Z_][A-Z0-9_]*)="(([^"$`\\]|\\[^"$`\\])*[$]?)"$'
-_APPCORE_KV_BARE_RE='^([A-Z_][A-Z0-9_]*)=([^"$`\\[:space:]]*[$]?)$'
-_APPCORE_KV_VALUE_RE='^([^"$`\\]|\\[^"$`\\])*[$]?$'
+_APPCORE_KV_QUOTED_RE='^([A-Z_][A-Z0-9_]*)="(([^"$`\\]|\\.)*[$]?)"$'
+_APPCORE_KV_BARE_RE='^([A-Z_][A-Z0-9_]*)=([A-Za-z0-9._:/@%+,=-]*[$]?)$'
 
 appcore_kv_value_ok() {
     local v="$1"
-    [[ "$v" =~ $_APPCORE_KV_VALUE_RE ]] || return 1
     [[ "$v" =~ ^[[:print:]]*$ ]] || return 1
     (( ${#v} <= 4000 ))
+}
+
+# Decode the body of a quoted value (already matched by the quoted regex):
+# \\ \$ \" \` lose their backslash; any other backslash stays.
+_appcore_kv_unescape() {
+    local in="$1" out="" c i
+    for ((i = 0; i < ${#in}; i++)); do
+        c="${in:i:1}"
+        if [[ "$c" == '\' ]]; then
+            case "${in:i+1:1}" in
+                '\'|'$'|'"'|'`') c="${in:i+1:1}"; i=$((i + 1)) ;;
+            esac
+        fi
+        out+="$c"
+    done
+    printf '%s' "$out"
+}
+
+# Encode a value for KEY="..." so sourcing and parsing both return it.
+_appcore_kv_escape() {
+    local v="$1"
+    v="${v//\\/\\\\}"
+    v="${v//\$/\\\$}"
+    v="${v//\"/\\\"}"
+    v="${v//\`/\\\`}"
+    printf '%s' "$v"
 }
 
 # Parse FILE into the caller-provided associative array named by $2.
@@ -74,7 +100,10 @@ _appcore_kv_parse() {
             return 3
         fi
         [[ -z "${line//[[:space:]]/}" || "$line" == \#* ]] && continue
-        if [[ "$line" =~ $_APPCORE_KV_QUOTED_RE || "$line" =~ $_APPCORE_KV_BARE_RE ]]; then
+        if [[ "$line" =~ $_APPCORE_KV_QUOTED_RE ]]; then
+            key="${BASH_REMATCH[1]}"
+            val=$(_appcore_kv_unescape "${BASH_REMATCH[2]}")
+        elif [[ "$line" =~ $_APPCORE_KV_BARE_RE ]]; then
             key="${BASH_REMATCH[1]}"
             val="${BASH_REMATCH[2]}"
         else
@@ -139,7 +168,7 @@ appcore_kv_write() {
         printf '# Written by appliance-core kvstate at %s. Values are data, never shell.\n' \
             "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
         for ((i = 0; i < ${#args[@]}; i += 2)); do
-            printf '%s="%s"\n' "${args[i]}" "${args[i + 1]}"
+            printf '%s="%s"\n' "${args[i]}" "$(_appcore_kv_escape "${args[i + 1]}")"
         done
     } > "$tmp" || { rm -f "$tmp"; return 1; }
     chmod "$mode" "$tmp" || { rm -f "$tmp"; return 1; }
