@@ -1,8 +1,8 @@
 #!/usr/bin/env bats
 # Unit tests for lib/hostname.sh.
 #
-# Strategy: PATH-shadow `hostnamectl`, `ip`, `dnsdomainname`,
-# `resolvectl`, `dig`, `hostname` so they produce controlled output.
+# Strategy: PATH-shadow `hostnamectl`, `ip`, `resolvectl`, `dig`,
+# `timeout`, `hostname` so they produce controlled output.
 # Use the test-only _APPCORE_HOSTNAME_HOSTS_FILE / _APPCORE_HOSTNAME_HOSTNAME_FILE
 # overrides to point /etc/hosts and /etc/hostname at temp files.
 #
@@ -20,6 +20,7 @@ setup() {
     # Source dependencies first so hostname.sh's auto-source skips.
     source "${LIB_DIR}/identity.sh"
     source "${LIB_DIR}/tui.sh"
+    source "${LIB_DIR}/detect-net.sh"
     source "${LIB_DIR}/hostname.sh"
 
     # Test fixtures for /etc/hosts and /etc/hostname.
@@ -35,6 +36,10 @@ printf '%s\n' "\$@" > "${FAKEBIN}/hostnamectl.argv"
 exit 0
 EOF
     chmod +x "${FAKEBIN}/hostnamectl"
+
+    # macOS does not ship GNU timeout. Keep the unit test isolated from
+    # host tooling while preserving timeout's command-wrapper behavior.
+    fake_cmd_args timeout 'shift; "$@"'
 }
 
 teardown() {
@@ -55,7 +60,7 @@ EOF
     chmod +x "${FAKEBIN}/${name}"
 }
 
-# Default hostname/ip/resolvectl/dig/dnsdomainname mocks for a known
+# Default hostname/ip/resolvectl/dig mocks for a known
 # starting state.
 default_mocks() {
     fake_cmd_args hostname '
@@ -67,12 +72,12 @@ esac
 '
     fake_cmd_args ip '
 case "$*" in
+    *"-4 route show default"*) echo "default via 10.10.10.1 dev ens33";;
     *"-o -4 addr show scope global"*) echo "2: ens33    inet 10.10.10.40/24 scope global ens33";;
 esac
 '
     fake_cmd_args resolvectl 'echo ""'
     fake_cmd_args dig 'echo ""'
-    fake_cmd_args dnsdomainname 'echo "lan"'
 }
 
 # ============================================================================
@@ -87,35 +92,42 @@ case "$1" in
 esac
 '
     fake_cmd_args dig 'echo "should-not-be-used.ptr.lan."'
-    fake_cmd_args ip 'echo "2: ens33    inet 10.10.10.40/24 scope global ens33"'
-    fake_cmd_args dnsdomainname 'echo "ignored.lan"'
+    fake_cmd_args ip '
+case "$*" in
+    *"-4 route show default"*) echo "default via 10.10.10.1 dev ens33";;
+    *"-o -4 addr show scope global"*) echo "2: ens33    inet 10.10.10.40/24 scope global ens33";;
+esac
+'
     out=$(appcore_hostname_default_domain)
     [ "$out" = "corp.example" ]
 }
 
 @test "default_domain: falls back to PTR when DHCP empty" {
     fake_cmd_args resolvectl 'echo ""'
-    fake_cmd_args ip 'echo "2: ens33    inet 10.10.10.40/24 scope global ens33"'
+    fake_cmd_args ip '
+case "$*" in
+    *"-4 route show default"*) echo "default via 10.10.10.1 dev ens33";;
+    *"-o -4 addr show scope global"*) echo "2: ens33    inet 10.10.10.40/24 scope global ens33";;
+esac
+'
     fake_cmd_args dig 'echo "host.ptr-source.lan."'
-    fake_cmd_args dnsdomainname 'echo "ignored"'
     out=$(appcore_hostname_default_domain)
     [ "$out" = "ptr-source.lan" ]
 }
 
-@test "default_domain: falls back to dnsdomainname when both above empty" {
+@test "default_domain: does not reuse the configured hostname domain" {
     fake_cmd_args resolvectl 'echo ""'
     fake_cmd_args ip 'echo ""'
     fake_cmd_args dig 'echo ""'
     fake_cmd_args dnsdomainname 'echo "fallback.lan"'
     out=$(appcore_hostname_default_domain)
-    [ "$out" = "fallback.lan" ]
+    [ -z "$out" ]
 }
 
 @test "default_domain: empty when nothing usable" {
     fake_cmd_args resolvectl 'echo ""'
     fake_cmd_args ip 'echo ""'
     fake_cmd_args dig 'echo ""'
-    fake_cmd_args dnsdomainname 'echo ""'
     out=$(appcore_hostname_default_domain)
     [ -z "$out" ]
 }
@@ -126,11 +138,56 @@ case "$1" in
     domain) echo "Link 2 (ens33): -bad-leading-hyphen";;
 esac
 '
-    fake_cmd_args ip 'echo "2: ens33    inet 10.10.10.40/24 scope global ens33"'
+    fake_cmd_args ip '
+case "$*" in
+    *"-4 route show default"*) echo "default via 10.10.10.1 dev ens33";;
+    *"-o -4 addr show scope global"*) echo "2: ens33    inet 10.10.10.40/24 scope global ens33";;
+esac
+'
     fake_cmd_args dig 'echo "host.good.lan."'
-    fake_cmd_args dnsdomainname 'echo ""'
     out=$(appcore_hostname_default_domain)
     [ "$out" = "good.lan" ]
+}
+
+# ============================================================================
+# change_tui — interface ownership
+# ============================================================================
+
+@test "change_tui: writes the selected LAN NIC address on a multi-NIC host" {
+    fake_cmd_args hostname '
+case "$1" in
+    -s) echo "smbproxy-1" ;;
+    *)  echo "smbproxy-1" ;;
+esac
+'
+    fake_cmd_args ip '
+case "$*" in
+    *"-4 route show default"*) echo "default via 10.20.30.1 dev eth0";;
+    *"-o -4 addr show scope global"*)
+        echo "2: eth1    inet 172.29.137.5/24 scope global eth1"
+        echo "3: eth0    inet 10.20.30.40/24 scope global dynamic eth0"
+        ;;
+esac
+'
+    fake_cmd_args resolvectl '
+case "$*" in
+    "dns eth0")    echo "Link 3 (eth0): 10.20.30.10";;
+    "domain eth0") echo "Link 3 (eth0): factory.example";;
+esac
+'
+    fake_cmd_args dig 'echo "smbproxy-1.factory.example."'
+    appcore_tui_prompt_validated() {
+        printf -v "$1" '%s' "smbproxy-new"
+    }
+    cat > "$HOSTSFILE" <<EOF
+127.0.0.1 localhost
+172.29.137.5 smbproxy-1.stale.test smbproxy-1
+EOF
+
+    appcore_hostname_change_tui "" "factory.example" "eth0"
+
+    grep -qE "^10\.20\.30\.40[[:space:]]+smbproxy-new\.factory\.example[[:space:]]+smbproxy-new$" "$HOSTSFILE"
+    ! grep -qE "^172\.29\.137\.5[[:space:]]+smbproxy-new" "$HOSTSFILE"
 }
 
 # ============================================================================
