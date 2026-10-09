@@ -292,7 +292,7 @@ appcore_tui_yesno() {
 # C-style escape processing (`\n` → newline, `\t` → tab, `\a` → BEL,
 # `\b` → backspace, `\v`, `\f`, `\\` → `\`, etc.). That's fine for
 # short label strings the developer controls, but it MANGLES content
-# that contains literal backslashes — most famously `NAIMOR\admin`
+# that contains literal backslashes — most famously `EXAMPLE\admin`
 # output from `wbinfo -u` (the `\a` becomes BEL, the `a` is lost in
 # rendering; same for `\g`, `\v`, etc.). It also bites any message
 # body that references a UNC path or a DOMAIN\Group in literal text.
@@ -319,7 +319,7 @@ appcore_tui_yesno() {
 #   wbinfo -u sample:
 #   $(wbinfo -u | head -5)
 #
-#   SSH usage: ssh 'NAIMOR\user'@server"
+#   SSH usage: ssh 'EXAMPLE\user'@server"
 appcore_tui_show_text() {
     local title="${1:?title required}"
     local body="${2-}"

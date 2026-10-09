@@ -37,7 +37,7 @@
 #       joined realm. Use this after a successful AD provision/join
 #       where the appliance was previously bound to a different
 #       realm (e.g. the lab's default lab.test still in /etc/hosts
-#       after joining naimor.naimorinc.com). Idempotent.
+#       after joining corp.example.com). Idempotent.
 #
 # Sentinel-guarded; auto-sources identity.sh and tui.sh.
 #

@@ -238,7 +238,7 @@ EOF
 
 # ============================================================================
 # align_to_realm — re-apply identity under a newly-joined realm
-# (the field-reported "lab.test stuck after joining naimor.naimorinc.com")
+# (the field-reported "lab.test stuck after joining corp.example.com")
 # ============================================================================
 
 # Mock for `ip -4 route get` + `ip -o -4 addr` such that the realm-
@@ -270,7 +270,7 @@ esac
 
 @test "align_to_realm: rejects .local (mDNS conflict)" {
     align_mocks
-    ! appcore_hostname_align_to_realm "naimor.local"
+    ! appcore_hostname_align_to_realm "corp.local"
 }
 
 @test "align_to_realm: writes FQDN + /etc/hosts under the new realm" {
@@ -282,17 +282,17 @@ esac
 10.10.10.42 mal-dc2.lab.test mal-dc2
 EOF
 
-    appcore_hostname_align_to_realm "naimor.naimorinc.com"
+    appcore_hostname_align_to_realm "corp.example.com"
 
     # hostnamectl received the new FQDN.
     grep -qx "set-hostname" "${FAKEBIN}/hostnamectl.argv"
-    grep -qx "mal-dc2.naimor.naimorinc.com" "${FAKEBIN}/hostnamectl.argv"
+    grep -qx "mal-dc2.corp.example.com" "${FAKEBIN}/hostnamectl.argv"
     # /etc/hostname carries the new FQDN.
-    grep -qx "mal-dc2.naimor.naimorinc.com" "$HOSTNAMEFILE"
+    grep -qx "mal-dc2.corp.example.com" "$HOSTNAMEFILE"
     # /etc/hosts now carries ONE line for our IP, pointing at the
     # NEW realm; the stale lab.test entry MUST have been stripped.
     cat "$HOSTSFILE"
-    grep -qE "^10\.10\.10\.42[[:space:]]+mal-dc2\.naimor\.naimorinc\.com[[:space:]]+mal-dc2$" "$HOSTSFILE"
+    grep -qE "^10\.10\.10\.42[[:space:]]+mal-dc2\.corp\.example\.com[[:space:]]+mal-dc2$" "$HOSTSFILE"
     ! grep -qF "lab.test" "$HOSTSFILE"
 }
 
@@ -301,8 +301,8 @@ EOF
     cat > "$HOSTSFILE" <<EOF
 127.0.0.1 localhost
 EOF
-    appcore_hostname_align_to_realm "naimor.naimorinc.com"
-    appcore_hostname_align_to_realm "naimor.naimorinc.com"
+    appcore_hostname_align_to_realm "corp.example.com"
+    appcore_hostname_align_to_realm "corp.example.com"
     # Exactly one line for our IP.
     local n; n=$(grep -cE "^10\.10\.10\.42[[:space:]]" "$HOSTSFILE")
     [ "$n" -eq 1 ]
@@ -316,9 +316,9 @@ EOF
 127.0.0.1 localhost
 EOF
     appcore_hostname_align_to_realm "lab.test"
-    appcore_hostname_align_to_realm "naimor.naimorinc.com"
+    appcore_hostname_align_to_realm "corp.example.com"
     # The /etc/hosts entry now carries the NEW realm, not the previous.
-    grep -qE "^10\.10\.10\.42[[:space:]]+mal-dc2\.naimor\.naimorinc\.com[[:space:]]+mal-dc2$" "$HOSTSFILE"
+    grep -qE "^10\.10\.10\.42[[:space:]]+mal-dc2\.corp\.example\.com[[:space:]]+mal-dc2$" "$HOSTSFILE"
     ! grep -qF "lab.test" "$HOSTSFILE"
     # Exactly one line for our IP — no append.
     local n; n=$(grep -cE "^10\.10\.10\.42[[:space:]]" "$HOSTSFILE")
@@ -327,7 +327,7 @@ EOF
 
 @test "align_to_realm: prefers default-route src over scope-global first entry" {
     # Multi-NIC case: the first scope-global address is the LegacyZone
-    # NIC (172.29.137.10), but the default route's source is the
+    # NIC (172.20.50.10), but the default route's source is the
     # domain NIC (10.10.10.42). align_to_realm should write the
     # domain-side IP into /etc/hosts.
     fake_cmd_args hostname '
@@ -339,7 +339,7 @@ esac
     fake_cmd_args ip '
 case "$*" in
     *"-4 route get 1.1.1.1"*) echo "1.1.1.1 via 10.10.10.1 dev eth0 src 10.10.10.30 uid 0";;
-    *"-o -4 addr show scope global"*) printf "2: eth1    inet 172.29.137.10/24 scope global eth1\n3: eth0    inet 10.10.10.30/24 scope global eth0\n";;
+    *"-o -4 addr show scope global"*) printf "2: eth1    inet 172.20.50.10/24 scope global eth1\n3: eth0    inet 10.10.10.30/24 scope global eth0\n";;
 esac
 '
     fake_cmd_args resolvectl 'echo ""'
@@ -348,8 +348,8 @@ esac
     cat > "$HOSTSFILE" <<EOF
 127.0.0.1 localhost
 EOF
-    appcore_hostname_align_to_realm "naimor.naimorinc.com"
-    grep -qE "^10\.10\.10\.30[[:space:]]+smbproxy-1\.naimor\.naimorinc\.com[[:space:]]+smbproxy-1$" "$HOSTSFILE"
+    appcore_hostname_align_to_realm "corp.example.com"
+    grep -qE "^10\.10\.10\.30[[:space:]]+smbproxy-1\.corp\.example\.com[[:space:]]+smbproxy-1$" "$HOSTSFILE"
     # No entry for the legacy-zone IP.
     ! grep -qE "^172\.29\.137\.10[[:space:]]" "$HOSTSFILE"
 }
@@ -374,8 +374,8 @@ esac
     cat > "$HOSTSFILE" <<EOF
 127.0.0.1 localhost
 EOF
-    appcore_hostname_align_to_realm "naimor.naimorinc.com"
-    grep -qE "^10\.10\.10\.42[[:space:]]+mal-dc2\.naimor\.naimorinc\.com[[:space:]]+mal-dc2$" "$HOSTSFILE"
+    appcore_hostname_align_to_realm "corp.example.com"
+    grep -qE "^10\.10\.10\.42[[:space:]]+mal-dc2\.corp\.example\.com[[:space:]]+mal-dc2$" "$HOSTSFILE"
 }
 
 # ============================================================================

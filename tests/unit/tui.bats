@@ -404,7 +404,7 @@ exit 0
 EOF
     chmod +x "${FAKEBIN}/whiptail"
 
-    appcore_tui_show_text "Domain logins" $'Domain logins configured.\n\nNAIMOR\\administrator\nNAIMOR\\guest\nNAIMOR\\krbtgt'
+    appcore_tui_show_text "Domain logins" $'Domain logins configured.\n\nEXAMPLE\\administrator\nEXAMPLE\\guest\nEXAMPLE\\krbtgt'
 
     grep -qFx -e '--textbox' "$recordfile"
     grep -qFx -e '--scrolltext' "$recordfile"
@@ -413,9 +413,9 @@ EOF
     # The captured body file must contain the LITERAL backslashes —
     # not interpreted as escape sequences. This is the contract.
     [ -f "${recordfile}.body" ]
-    grep -qFx "NAIMOR\\administrator" "${recordfile}.body"
-    grep -qFx "NAIMOR\\guest"         "${recordfile}.body"
-    grep -qFx "NAIMOR\\krbtgt"        "${recordfile}.body"
+    grep -qFx "EXAMPLE\\administrator" "${recordfile}.body"
+    grep -qFx "EXAMPLE\\guest"         "${recordfile}.body"
+    grep -qFx "EXAMPLE\\krbtgt"        "${recordfile}.body"
 
     rm -f "${recordfile}.body"
 }
@@ -436,10 +436,10 @@ exit 0
 EOF
     chmod +x "${FAKEBIN}/whiptail"
 
-    appcore_tui_show_text "Sudo granted" "Sudo granted to 'NAIMOR\\Domain Admins'."
+    appcore_tui_show_text "Sudo granted" "Sudo granted to 'EXAMPLE\\Domain Admins'."
     [ -f "${recordfile}.body" ]
     # Verbatim — no doubled backslash, no leaked '\D' escape, literal space.
-    grep -qFx "Sudo granted to 'NAIMOR\\Domain Admins'." "${recordfile}.body"
+    grep -qFx "Sudo granted to 'EXAMPLE\\Domain Admins'." "${recordfile}.body"
 
     rm -f "${recordfile}.body"
 }
