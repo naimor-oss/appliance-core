@@ -11,10 +11,10 @@
 #
 # Public surface:
 #
-#   appcore_hostname_default_domain
-#       Print the best-guess default domain for an unprovisioned host
-#       to stdout. Order: live DHCP search-domain (resolvectl) → live
-#       reverse-DNS for our IP → current dnsdomainname → empty.
+#   appcore_hostname_default_domain [cache_path] [interface]
+#       Print the canonical network detector's effective domain for an
+#       unprovisioned host. Never falls back to the configured hostname,
+#       which can contain a build-time or previous-network domain.
 #
 #   appcore_hostname_apply_safe <short> <domain> <ip>
 #       Set hostnamectl, write /etc/hostname, rewrite /etc/hosts safely
@@ -22,7 +22,7 @@
 #       canonical line). Returns non-zero on validator failure or
 #       hostnamectl failure. Idempotent.
 #
-#   appcore_hostname_change_tui [<current_short>] [<domain_override>]
+#   appcore_hostname_change_tui [<current_short>] [<domain_override>] [<interface>]
 #       Interactive TUI flow. Prompts for short name (validator =
 #       NetBIOS subset). Domain auto-detected unless overridden. On
 #       success: applies, sets exported APPCORE_HOSTNAME_NEW_FQDN.
@@ -39,7 +39,7 @@
 #       realm (e.g. the lab's default lab.test still in /etc/hosts
 #       after joining naimor.naimorinc.com). Idempotent.
 #
-# Sentinel-guarded; auto-sources identity.sh and tui.sh.
+# Sentinel-guarded; auto-sources identity.sh, tui.sh, and detect-net.sh.
 #
 # Naming: APPCORE_HOSTNAME_* / appcore_hostname_*. set -u safe.
 
@@ -54,42 +54,22 @@ APPCORE_HOSTNAME_LOADED=1
     source /usr/local/lib/appliance-core/identity.sh
 [[ -n "${APPCORE_TUI_LOADED:-}" ]] || \
     source /usr/local/lib/appliance-core/tui.sh
+command -v appcore_detect_net_init >/dev/null 2>&1 || \
+    source /usr/local/lib/appliance-core/detect-net.sh
 
-# ----- domain detection (live, in priority order) ----------------------------
+# ----- domain detection ------------------------------------------------------
 
 appcore_hostname_default_domain() {
-    local d
-    # 1. Live DHCP search domain via resolvectl (per-link).
-    d=$(resolvectl domain 2>/dev/null \
-        | awk '/^Link [0-9]/ {for(i=4;i<=NF;i++) {
-                                  gsub(/^~/,"",$i)
-                                  if ($i!="" && $i!=".") {print $i; exit}
-                              }}')
-    if [[ -n "$d" ]] && appcore_id_domain_validate "$d"; then
-        printf '%s' "$d"; return 0
-    fi
-    # 2. Live reverse-DNS for our current IP.
-    local ip
-    ip=$(ip -o -4 addr show scope global 2>/dev/null \
-         | awk 'NR==1 {sub(/\/.*$/,"",$4); print $4}')
-    if [[ -n "$ip" ]]; then
-        local ptr
-        ptr=$(timeout 5 dig +short -x "$ip" 2>/dev/null \
-              | awk 'NR==1 {sub(/\.$/,""); print}')
-        if [[ -n "$ptr" && "$ptr" == *.* ]]; then
-            d="${ptr#*.}"
-            if appcore_id_domain_validate "$d"; then
-                printf '%s' "$d"; return 0
-            fi
+    local cache="${1:-}"
+    local iface="${2:-}"
+    appcore_detect_net_init "$cache" "$iface" >/dev/null 2>&1 || true
+    local candidate
+    for candidate in "${APPCORE_DET_DHCP_DOMAIN:-}" "${APPCORE_DET_PTR_DOMAIN:-}"; do
+        if [[ -n "$candidate" ]] && appcore_id_domain_validate "$candidate"; then
+            printf '%s' "$candidate"
+            return 0
         fi
-    fi
-    # 3. Whatever dnsdomainname currently says (may itself be stale,
-    #    last-resort fallback).
-    d=$(dnsdomainname 2>/dev/null)
-    if [[ -n "$d" ]] && appcore_id_domain_validate "$d"; then
-        printf '%s' "$d"; return 0
-    fi
-    return 0   # empty stdout = no default available
+    done
 }
 
 # ----- apply (no prompts) ----------------------------------------------------
@@ -171,6 +151,7 @@ appcore_hostname_apply_safe() {
 appcore_hostname_change_tui() {
     local cur_short="${1:-}"
     local domain_override="${2:-}"
+    local iface="${3:-}"
     APPCORE_HOSTNAME_NEW_FQDN=""
     export APPCORE_HOSTNAME_NEW_FQDN
 
@@ -182,10 +163,10 @@ appcore_hostname_change_tui() {
             domain="$domain_override"
         else
             echo "appcore_hostname: ignoring invalid domain override: $domain_override" >&2
-            domain=$(appcore_hostname_default_domain)
+            domain=$(appcore_hostname_default_domain "" "$iface")
         fi
     else
-        domain=$(appcore_hostname_default_domain)
+        domain=$(appcore_hostname_default_domain "" "$iface")
     fi
 
     if [[ "$domain" == *.local ]]; then
@@ -209,9 +190,11 @@ appcore_hostname_change_tui() {
         return 1
     fi
 
-    local ip
-    ip=$(ip -o -4 addr show scope global 2>/dev/null \
-         | awk 'NR==1 {sub(/\/.*$/,"",$4); print $4}')
+    # Resolve the address through the same interface-aware detector used
+    # for the domain. On a proxy, the isolated legacy NIC may sort before
+    # the LAN NIC and must never be written into the LAN FQDN host entry.
+    appcore_detect_net_init "" "$iface" >/dev/null 2>&1 || true
+    local ip="${APPCORE_DET_IP:-}"
 
     if ! appcore_hostname_apply_safe "$new_short" "$domain" "$ip"; then
         whiptail --title "Hostname" --msgbox \

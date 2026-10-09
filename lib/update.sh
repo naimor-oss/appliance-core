@@ -125,6 +125,7 @@ appcore_update_apply() {
 
     appcore_update_verify_bundle "$bundle" || return 2
     local APPLIANCE BUNDLE_VERSION ACCEPTS REPO_COMMIT BUILT_AT
+    # shellcheck disable=SC2034  # read by bundle hooks and the updater
     APPLIANCE="" BUNDLE_VERSION="" ACCEPTS="" REPO_COMMIT="" BUILT_AT=""
     appcore_kv_load "$bundle/bundle.env" "${APPCORE_BUNDLE_KEYS[@]}" \
         || { _appcore_update_err "bundle.env is malformed"; return 2; }
@@ -239,7 +240,9 @@ _appcore_update_run() {
     ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
     REL_APPLIANCE="$APPLIANCE"
     REL_VERSION="$BUNDLE_VERSION"
+    # shellcheck disable=SC2034  # written to the release file by appcore_release_write
     REL_REPO_COMMIT="$REPO_COMMIT"
+    # shellcheck disable=SC2034  # written to the release file by appcore_release_write
     REL_LAST_UPDATE_AT="$ts"
     REL_MIGRATIONS=$(printf '%s' "$applied" | xargs)
     REL_HISTORY=$(printf '%s %s' "${REL_HISTORY:-}" "${BUNDLE_VERSION}@${ts}" \

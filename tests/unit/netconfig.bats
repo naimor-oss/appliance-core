@@ -162,6 +162,64 @@ EOF
     rm -f "$log"
 }
 
+@test "apply: successful silent netplan leaves a useful result message" {
+    fake_cmd_args netplan 'exit 0'
+    log=$(mktemp -t netconfig-bats.XXXXXX)
+    appcore_netconfig_apply "$log"
+    [ -s "$log" ]
+    grep -q 'applied successfully' "$log"
+    rm -f "$log"
+}
+
+# ============================================================================
+# single-NIC TUI defaults
+# ============================================================================
+
+mock_single_nic_tui() {
+    fake_cmd_args ip '
+case "$*" in
+    "-4 route show default") echo "default via 192.168.0.1 dev ens3" ;;
+    "-4 addr show dev ens3") echo "inet 192.168.0.77/24 scope global dynamic ens3" ;;
+    "-o -4 addr show dev ens3 scope global") echo "2: ens3 inet 192.168.0.77/24 scope global dynamic ens3" ;;
+esac'
+    TUI_CAPTURE="${OUTDIR}/whiptail.args"
+    whiptail() {
+        printf '%s\n' "$*" > "$TUI_CAPTURE"
+        return 1
+    }
+}
+
+@test "change_tui: live resolver detection wins over caller fallback" {
+    mock_single_nic_tui
+    appcore_detect_net_init() {
+        APPCORE_DET_IP="192.168.0.77"
+        APPCORE_DET_GATEWAY="192.168.0.1"
+        APPCORE_DET_DHCP_DNS="192.168.0.18 192.168.0.38"
+    }
+
+    run appcore_netconfig_change_tui_single_nic \
+        "$OUT" 'e*' "10.10.10.10"
+
+    [ "$status" -eq 1 ]
+    grep -q 'DNS: 192.168.0.18 192.168.0.38' "$TUI_CAPTURE"
+}
+
+@test "change_tui: caller fallback preserves cached DHCP resolvers" {
+    mock_single_nic_tui
+    appcore_detect_net_init() {
+        APPCORE_DET_IP="192.168.0.77"
+        APPCORE_DET_GATEWAY="192.168.0.1"
+        APPCORE_DET_DHCP_DNS=""
+    }
+
+    run appcore_netconfig_change_tui_single_nic \
+        "$OUT" 'e*' "192.168.0.18 192.168.0.38 192.168.0.77"
+
+    [ "$status" -eq 1 ]
+    grep -q 'DNS: 192.168.0.18 192.168.0.38 192.168.0.77' "$TUI_CAPTURE"
+    ! grep -q 'DNS: 1.1.1.1' "$TUI_CAPTURE"
+}
+
 # ============================================================================
 # Sentinel guard
 # ============================================================================

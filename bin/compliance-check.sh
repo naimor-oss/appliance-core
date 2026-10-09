@@ -449,7 +449,6 @@ load_skip_file() {
 
 run_one_check() {
     local id="$1" appdir="$2"
-    local id_lower="${id,,}"
     # Find the function by ID (prefix match).
     local fn
     fn=$(compgen -A function "_check_${id}_" 2>/dev/null | head -1)
