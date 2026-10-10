@@ -328,7 +328,7 @@ appcore_id_smb_name_validate() {
 # would unescape it, but reaching us as a literal backslash-space pair)
 # or quoted. Without a single point of truth for accept/parse/format,
 # each consumer rolls its own and ends up with mismatched display
-# ("NAIMOR\\Domain\ Admins" instead of "NAIMOR\Domain Admins") or
+# ("EXAMPLE\\Domain\ Admins" instead of "EXAMPLE\Domain Admins") or
 # rejection of valid input ("syntax error" on "Domain Admins").
 #
 # Public surface:

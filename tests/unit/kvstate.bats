@@ -26,9 +26,9 @@ teardown() {
 }
 
 @test "hidden share names: a trailing \$ is kept, quoted or bare, and stays sourceable" {
-    printf 'SHARE_NAME="ProfitFab$"\nBACKEND_IP=Files$\n' > "$T/s"
+    printf 'SHARE_NAME="Accounting$"\nBACKEND_IP=Files$\n' > "$T/s"
     appcore_kv_load "$T/s" SHARE_NAME BACKEND_IP
-    [ "$SHARE_NAME" = 'ProfitFab$' ]
+    [ "$SHARE_NAME" = 'Accounting$' ]
     [ "$BACKEND_IP" = 'Files$' ]
     appcore_kv_write "$T/w" 0644 SHARE_NAME 'Engineering$'
     SHARE_NAME=""; appcore_kv_load "$T/w" SHARE_NAME
