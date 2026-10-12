@@ -36,14 +36,15 @@ was prepared — recorded by each consumer into
 
 | Lib | Status | Contract |
 | --- | --- | --- |
-| `detect-net.sh` | landed v0.1.0; v0.12.0 validates DHCP/PTR values as untrusted and writes the cache atomically — 11 unit tests | [`../docs/lib-detect-net.md`](../docs/lib-detect-net.md) |
+| `detect-net.sh` | landed v0.1.0; v0.12.0 validates DHCP/PTR values as untrusted and writes the cache atomically; v0.14.0 adds interface-scoped detection, network-scoped cache fallback and `APPCORE_DET_CACHE_KEYS` — 21 unit tests | [`../docs/lib-detect-net.md`](../docs/lib-detect-net.md) |
 | `kvstate.sh` | landed v0.12.0 — 16 unit tests (strict non-executing `KEY="value"` parser and atomic writer; session plan 05) | [`../docs/lib-kvstate.md`](../docs/lib-kvstate.md) |
 | `update.sh` | landed v0.13.0 — 11 unit tests (release identity file and the standard update bundle runner, builder in `../update/`; audit M1/M2) | [`../docs/lib-update.md`](../docs/lib-update.md) |
 | `identity.sh` | landed v0.10.0 — 64/64 unit tests green (added smb_name primitive accepting trailing-`$` hidden marker) | [`../docs/lib-identity.md`](../docs/lib-identity.md) |
 | `tui.sh` | landed v0.11.0 — 30/31 unit tests green (1 skipped on macOS; added show_text for backslash-safe verbatim body display) | [`../docs/lib-tui.md`](../docs/lib-tui.md) |
-| `hostname.sh` | landed v0.8.0 — 21/21 unit tests green (depends on identity + tui; added align_to_realm for post-join /etc/hosts re-write) | [`../docs/lib-hostname.md`](../docs/lib-hostname.md) |
+| `hostname.sh` | landed — canonical detected domain plus safe hostname/hosts alignment | [`../docs/lib-hostname.md`](../docs/lib-hostname.md) |
 | `apt-helpers.sh` | landed v0.5.0 — 11/11 unit tests green (2 skipped on Mac) | [`../docs/lib-apt-helpers.md`](../docs/lib-apt-helpers.md) |
-| `netconfig.sh` | landed v0.6.0 — 17/17 unit tests green | [`../docs/lib-netconfig.md`](../docs/lib-netconfig.md) |
+| `netconfig.sh` | landed — netplan render/apply and single-NIC TUI | [`../docs/lib-netconfig.md`](../docs/lib-netconfig.md) |
+| `timezone.sh` | landed v0.14.0 — DHCP-first, bounded geolocation fallback, and visible failure reason | [`../docs/lib-timezone.md`](../docs/lib-timezone.md) |
 | `console-wizard.sh` | future | — |
 | `motd.sh` | future | — |
 

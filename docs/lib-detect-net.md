@@ -1,8 +1,10 @@
 # `lib/detect-net.sh` — contract
 
-**Version**: 0.1.0 (lands at `lib/VERSION` 0.1.0; semver follows the
-core's release).
-**Status**: landed (Phase 2). Awaiting first consumer migration.
+**Version**: landed in 0.1.0; untrusted-input validation and the atomic
+cache write in 0.12.0; interface-scoped detection, network-scoped cache
+fallback, `APPCORE_DET_IFACE`, `APPCORE_DET_EFFECTIVE_DOMAIN_SOURCE` and
+`APPCORE_DET_CACHE_KEYS` in 0.14.0. SemVer follows the core's release.
+**Status**: landed and consumed by both appliance products.
 
 This is the authoritative reference for the lib's public surface.
 The implementation in `../lib/detect-net.sh` follows; if behavior
@@ -32,7 +34,7 @@ These exclusions are load-bearing — see ADR 0002 §"Excludes" tables.
 
 ## Public surface
 
-### `appcore_detect_net_init [cache_path]`
+### `appcore_detect_net_init [cache_path] [interface]`
 
 Populate the `APPCORE_DET_*` exported variables from live state.
 
@@ -40,10 +42,15 @@ Populate the `APPCORE_DET_*` exported variables from live state.
 
 - `cache_path` (optional): path to a file written by a previous
   `appcore_detect_net_write_cache` call. When given AND a live
-  probe came back empty for some field, the cached value for THAT
-  field is used as a fallback. Live wins outright when non-empty;
-  empty live + cache-present = cache used; empty live + no cache =
-  empty.
+  probe came back empty for some field, a cached contextual value is
+  used only when the live IP/gateway still match the cached network.
+  A host with no live IP or gateway may use its complete last-known
+  snapshot for an offline boot. This prevents a domain or resolver
+  from a build/previous network leaking into a new deployment.
+- `interface` (optional): interface that owns the deployment/LAN
+  context. When omitted, the first default-route interface is used.
+  Multi-NIC products must pass their persisted LAN-role interface so
+  an isolated/static interface cannot contribute IP, DNS, domain, or PTR.
 
 **Side effects**: none. Read-only network probes (`ip`, `resolvectl`,
 `dig`).
@@ -52,18 +59,23 @@ Populate the `APPCORE_DET_*` exported variables from live state.
 
 | Variable | Source | Notes |
 | --- | --- | --- |
-| `APPCORE_DET_IP` | `ip -o -4 addr show scope global` (first match) | IPv4 only; IPv6 not addressed in v1. |
-| `APPCORE_DET_GATEWAY` | `ip route show default` | next-hop only (no metric, no dev). |
-| `APPCORE_DET_DHCP_DNS` | `resolvectl dns` per-link | space-separated. |
-| `APPCORE_DET_DHCP_DOMAIN` | `resolvectl domain` per-link | first non-`.` non-`~` entry; preserves DHCP search-domain semantics. |
+| `APPCORE_DET_IFACE` | explicit interface, else default route | Empty when neither is available. |
+| `APPCORE_DET_IP` | global IPv4 on `APPCORE_DET_IFACE` | IPv4 only; IPv6 not addressed in v1. |
+| `APPCORE_DET_GATEWAY` | default route through `APPCORE_DET_IFACE` | next-hop only (no metric, no dev). |
+| `APPCORE_DET_DHCP_DNS` | `resolvectl dns APPCORE_DET_IFACE` | space-separated. |
+| `APPCORE_DET_DHCP_DOMAIN` | `resolvectl domain APPCORE_DET_IFACE` | first non-`.` non-`~` entry; preserves DHCP search-domain semantics. |
 | `APPCORE_DET_PTR_FQDN` | `dig +short -x <ip>`, 5s timeout | trailing dot stripped. |
 | `APPCORE_DET_PTR_NAME` | `${APPCORE_DET_PTR_FQDN%%.*}` | the short part. Empty if no PTR. |
 | `APPCORE_DET_PTR_DOMAIN` | `${APPCORE_DET_PTR_FQDN#*.}` | the domain part. Empty if PTR has no dot. |
 | `APPCORE_DET_EFFECTIVE_DOMAIN` | `${DHCP_DOMAIN:-$PTR_DOMAIN}` | DHCP wins when both available. |
+| `APPCORE_DET_EFFECTIVE_DOMAIN_SOURCE` | detector decision | `dhcp`, `ptr`, or empty. |
 
 **Failure modes** (all non-fatal; affected variables empty):
 
-- No default route → `IP`/`GATEWAY` empty.
+- No explicit interface and no default route → interface, IP, gateway,
+  DHCP DNS/domain, and PTR are empty. With an explicit interface but no
+  default route, gateway is empty while interface-scoped probes may still
+  succeed.
 - `resolvectl` not installed or not used (some non-systemd-resolved
   setups) → `DHCP_DNS` / `DHCP_DOMAIN` empty.
 - `dig` missing or times out (5s bound) → `PTR_*` empty.
@@ -77,12 +89,30 @@ when DNS is broken).
 ### `appcore_detect_net_write_cache <cache_path>`
 
 Snapshot the current `APPCORE_DET_*` values to `<cache_path>` in
-sourceable `KEY="value"` form. Caller picks the path.
+`KEY="value"` form. Caller picks the path. Values are validated again and
+`EFFECTIVE_DOMAIN`/`EFFECTIVE_DOMAIN_SOURCE` are re-derived first, so the
+file is always internally consistent.
 
-**Side effects**: writes the file (mode 0644), creates parent
-directory if missing.
+**Side effects**: writes the file atomically (temp file in the same
+directory, mode 0644, then rename), creates the parent directory if
+missing.
 
-**Failure modes**: returns non-zero on `mkdir`/`chmod` failure.
+**Failure modes**: returns non-zero on `mkdir`/`mktemp`/`chmod`/`mv`
+failure; no partial file is left behind.
+
+### `APPCORE_DET_CACHE_KEYS`
+
+The array of every key the cache file can contain. Consumers parse the
+cache with `appcore_kv_load`, which **refuses unknown keys**, so they must
+pass this array instead of a hand-written list:
+
+```bash
+appcore_kv_load "$DETECT_FILE" "${APPCORE_DET_CACHE_KEYS[@]}" MY_OWN_KEYS...
+```
+
+A new cache field therefore cannot make older consumers reject the whole
+file. `tests/unit/detect-net.bats` fails if the writer and this array drift
+apart, and checks that kvstate accepts what the writer produces.
 
 ## Caller integration patterns
 
@@ -101,7 +131,13 @@ appcore_detect_net_write_cache /var/lib/<appliance>-detected.env
 source /usr/local/lib/appliance-core/detect-net.sh
 appcore_detect_net_init /var/lib/<appliance>-detected.env
 # APPCORE_DET_* now reflect live IP / PTR / DHCP-domain, with
-# cached values filling in only when a live probe came back empty.
+# matching-network cache values filling transiently empty probes.
+```
+
+For a multi-NIC appliance:
+
+```bash
+appcore_detect_net_init /var/lib/<appliance>-detected.env "$LAN_IFACE"
 ```
 
 ### Pattern B — strict-live, no cache
@@ -142,7 +178,8 @@ test cases cover at minimum:
 - PTR with no dot (e.g. `localhost`): `NAME` set, `DOMAIN` empty.
 - DHCP-domain with `~` prefix: `~` stripped, name kept.
 - DHCP-domain `"."`: skipped, next entry tried.
-- Cache fallback: live PTR empty → cached PTR used.
+- Cache fallback: live PTR empty on the same network → cached PTR used.
+- Cache isolation: changed IP/gateway → cached DNS/domain/PTR ignored.
 - Cache override: live PTR non-empty → cached PTR ignored even if
   different.
 - `appcore_detect_net_write_cache` round-trip: write then init with
@@ -151,15 +188,20 @@ test cases cover at minimum:
 Run via `lab/scenarios/unit-tests.sh` against the blank appliance
 `golden-image` checkpoint.
 
-## Untrusted network input (v0.12.0)
+## Untrusted network input (v0.12.0, extended in v0.14.0)
 
 DHCP options and reverse-DNS answers come from the network. Since
 v0.12.0 every detected value is checked against the character set its
 field can legitimately use (IPv4 dotted quad; DNS server list of hex,
 `:`, `.`, and spaces; hostnames and domains of letters, digits, `.`, and
 `-`). Anything else is cleared before it is used, cached, or returned.
-The same check runs on values read back from a cache written by an
-older release. `appcore_detect_net_write_cache` writes atomically
+The interface name is checked too (1-15 characters, starting with a letter
+or digit; letters, digits and `_ . : @ + -`). A malformed `interface`
+argument is a caller bug: the detector returns empty values and does **not**
+fall back to the default route, because that would report a different
+network than the one the caller asked about. The check runs on the live
+values before they are compared with the cache, and again on values read
+back from a cache, including one written by an older release. `appcore_detect_net_write_cache` writes atomically
 (temp file, then rename). Consumers must read the cache with
 `appcore_kv_load` (see [`lib-kvstate.md`](lib-kvstate.md)), never with
 `source`.

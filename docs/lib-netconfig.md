@@ -36,8 +36,8 @@ netplan — silently ignored. Migrating the consumer to call
 | `appcore_netconfig_get_addr_source` | `<iface>` | Print `dhcp`/`static`/`none` for the iface based on the iproute2 `dynamic` flag. |
 | `appcore_netconfig_render_dhcp` | `<out_path> <ethernet_label> <match_yaml>` | Write a DHCP-only netplan to `<out_path>` (mode 0600). `<ethernet_label>` is the YAML key under `ethernets:`. `<match_yaml>` is the body of the `match:` block. Includes `dhcp-identifier: mac` so reservation-based DHCP works. |
 | `appcore_netconfig_render_static` | `<out_path> <label> <match_yaml> <ipcidr> <gateway> <dns_csv>` | Same shape, static-IP variant. Validates CIDR, gateway, and each DNS entry via `identity.sh`. DNS list accepts space- or comma-separated input. |
-| `appcore_netconfig_apply` | `[<log_path>]` | `netplan apply`; tee output to `<log_path>` if given. Returns netplan's exit code. |
-| `appcore_netconfig_change_tui_single_nic` | `<out_path> <iface_match_pattern>` | Full TUI flow: detect current source, offer DHCP / pin-lease / static / cancel, render + apply on confirmation. Uses `tui.sh`'s sized-textbox renderer for the apply log so long messages don't clip. |
+| `appcore_netconfig_apply` | `[<log_path>]` | `netplan apply`; tee output to `<log_path>` if given. A successful silent apply writes a short success message so a result dialog is never blank. Returns netplan's exit code. |
+| `appcore_netconfig_change_tui_single_nic` | `<out_path> <iface_match_pattern> [dns_fallback]` | Full TUI flow: detect current source, offer DHCP / pin-lease / static / cancel, render + apply on confirmation. Live resolver detection wins; the optional caller fallback is used before the public `1.1.1.1` default. Uses `tui.sh`'s sized-textbox renderer for the apply log so long messages don't clip. |
 
 ## Caller integration patterns
 
@@ -48,7 +48,8 @@ netplan — silently ignored. Migrating the consumer to call
     source /usr/local/lib/appliance-core/netconfig.sh
 appcore_netconfig_change_tui_single_nic \
     /etc/netplan/60-samba-init.yaml \
-    'e*'
+    'e*' \
+    "$CACHED_DHCP_DNS"
 ```
 
 ### Replace samba-sconfig's broken config_network

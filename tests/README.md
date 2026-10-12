@@ -1,21 +1,19 @@
 # `tests/` — bats unit tests for `lib/`
 
-Each `lib/*.sh` has a matching `tests/unit/*.bats`. Tests run on
-the appliance, not on the Mac orchestrator: bash 5+ is needed and
-the lab harness already has the SSH plumbing.
+Each `lib/*.sh` has a matching `tests/unit/*.bats`. The suite uses
+PATH-shadowed system-command fixtures and runs on both the macOS
+orchestrator and a Debian appliance.
 
 ## Running
 
-A scenario `lab/scenarios/unit-tests.sh` ssh's into the blank
-appliance's `golden-image` checkpoint, copies the lib + tests
-into `/tmp/`, runs `bats tests/unit/`, and reports pass/fail.
-
 ```bash
-lab/run-scenario.sh unit-tests
+bats tests/unit/
 ```
 
-`bats-core` is installed by `prepare-image.sh` as part of the
-base-tools layer. Operator-facing surfaces don't reveal it.
+The cross-repo release preflight invokes this command on the Mac.
+`bats-core` is also installed by `prepare-image.sh`, so the same suite
+can be copied to and run on a built appliance when Linux-specific
+confirmation is needed.
 
 ## Conventions
 
@@ -29,7 +27,5 @@ base-tools layer. Operator-facing surfaces don't reveal it.
 - Failure output points at the file:line of the assertion plus
   the observed vs expected values.
 
-## Index
-
-(Tests land alongside their libs per the migration plan in the
-design doc.)
+The suite covers `apt-helpers`, `compliance`, `detect-net`, `hostname`,
+`identity`, `netconfig`, `timezone`, and `tui`.
