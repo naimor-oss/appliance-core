@@ -1,60 +1,44 @@
 # Lab Testing Guide
 
-(Adapt this doc as the appliance's scenario coverage solidifies. The
-existing siblings' `docs/LAB-TESTING.md` files are the references.)
+How the appliance-core golden image is built and tested. Both scripts run
+from WSL2 on a Hyper-V host (or over SSH to one) through lab-kit's
+`bin/lab-vm`, configured by its `LAB_*` variables
+(`../lab-kit/docs/disposable-vms.md`).
 
-## Test Runner Model
+## Where do I start?
 
-`lab/run-scenario.sh` is a thin wrapper around the generic
-`../lab-kit/bin/run-scenario.sh` runner. A scenario is a shell file
-in `lab/scenarios/` that defines:
+| If you want to … | Run |
+| --- | --- |
+| Get a current Debian cloud image | `../lab-kit/bin/lab-vm fetch-debian` (prints its host path) |
+| Build the golden image | `lab/build-core-image.sh -s CLOUD.vhdx -d BASES_DIR` |
+| Test a built image | `lab/smoke-core-image.sh BASES_DIR\appliance-core-<ver>-<date>.vhdx` |
+| Try something on the image by hand | `lab-vm new t1 -b IMAGE.vhdx`, `lab-vm ssh t1`, `lab-vm rm t1` |
 
-| Function | Required | Purpose |
-| --- | --- | --- |
-| `run_scenario` | yes | Action under test, usually over SSH into the VM. |
-| `verify` | yes | Asserts final state, returns non-zero on failure. |
-| `pre_hook` | optional | Idempotent setup. |
-| `post_hook` | optional | Evidence collection / cleanup. |
+## Building
 
-See `dev-commons/STYLE.md` §7 for the verify/pre_hook discipline
-and the composing pattern (`source` upstream scenarios, factor out
-`do_*` helpers, override `run_scenario` / `verify`).
+`build-core-image.sh` copies the tracked files of this checkout to a build
+VM made from the cloud image, runs `prepare-image.sh` with the commit hash
+(`-dirty` if the tree has changes), then has `lab-vm` remove the build user,
+seal the VM and publish its disk as `appliance-core-<lib VERSION>-<date>.vhdx`,
+read-only. Published images are never rebuilt in place: a newer build gets
+a new name, and VMs made from the old one keep working.
 
-## Existing Scenarios
+## What the smoke test checks
 
-### `smoke-prepared-image`
+A VM made from the image, with its own seed:
 
-Verifies a freshly reverted `golden-image` checkpoint is a clean,
-unprovisioned appliance base.
+| Check | Why |
+| --- | --- |
+| `/etc/appliance-core.release` and `appliance-core-update status` | the image says what it is |
+| provenance holds a full commit hash | regression hunts |
+| vendored libs present and parse; `core-sconfig --status` runs | the shared runtime works |
+| no build user; new machine-id and host keys; cloud-init done | the image was sealed |
+| no krb5/NTP settings; MOTD names no product; nftables inactive | host- and operator-neutral |
+| bundle `<ver>.1` applies, history records it, rollback restores files and version | the image is upgradable |
+| a bundle that doesn't accept the unit's version is refused | updates can't skip a step |
 
-Run:
+## Scenario runner
 
-```bash
-lab/run-scenario.sh smoke-prepared-image
-```
-
-(Add real per-appliance scenarios here as they ship.)
-
-## Important Tests To Add
-
-(List the highest-value tests to add next, in rough priority order.
-Each entry: purpose, key assertions, any new sconfig surface needed.
-The proxy appliance's `docs/LAB-TESTING.md` "Important Tests To Add"
-section is the structural reference.)
-
-## Scenario Template
-
-```bash
-# lab/scenarios/example.sh
-
-run_scenario() {
-    ssh_vm 'sudo core-sconfig --status'
-}
-
-verify() {
-    local rc=0
-    say "core-sconfig is installed"
-    ssh_vm 'test -x /usr/local/sbin/core-sconfig' || rc=1
-    return "$rc"
-}
-```
+`lab/run-scenario.sh` wraps lab-kit's generic runner for checkpoint-based
+scenarios (`lab/scenarios/`). New tests should prefer a disposable VM from
+the published image, as the smoke test does.

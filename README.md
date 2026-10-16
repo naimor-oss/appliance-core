@@ -57,16 +57,23 @@ appliances vendor them during image preparation and pass the 12-check
 downstream compliance suite in `bin/compliance-check.sh`.
 
 `prepare-image.sh` installs the libraries under
-`/usr/local/lib/appliance-core/` and records both the SemVer and exact
-Git commit in `/etc/appliance-core.provenance`. The blank-appliance lab
-produces a host-agnostic `deploy-master` and smoke-tests vendoring,
-provenance, required tools, and the no-bake-in/no-leak posture.
+`/usr/local/lib/appliance-core/`, records the SemVer and exact Git commit in
+`/etc/appliance-core.provenance`, and gives the blank image the same release
+identity and updater as the products (`/etc/appliance-core.release`,
+`appliance-core-update`, bundles from `update/build-core-bundle.sh`).
 
-**Deferred (no `golden-image` yet)**: `core-firstboot.service`
-that wires the lib into a one-shot oneshot at first boot,
-and the TTY1 console wizard. Until those land,
-`build-fresh-base.sh` defaults to stop-after-deploy-master;
-pass `--with-firstboot` when the service exists.
+**Golden image.** `lab/build-core-image.sh` builds it with lab-kit's
+`lab-vm`: a fresh Debian cloud image, `prepare-image.sh`, the build user
+removed, sealed (new machine-id, host keys and cloud-init run on first boot),
+published as a dated read-only VHDX. `lab/smoke-core-image.sh` tests a VM
+made from it, including applying and rolling back an update bundle
+([`docs/LAB-TESTING.md`](docs/LAB-TESTING.md)). About 2 minutes to build,
+1 minute to test.
+
+**Still deferred:** `core-firstboot.service` and the TTY1 console wizard.
+Until they land, the image has no login of its own: give each VM a user
+through a NoCloud seed (`lab-vm new` does). The older checkpoint pipeline
+(`lab/build-fresh-base.sh`, `deploy-master`) is superseded.
 
 Future shared surfaces remain demand-driven: add them only after two
 product appliances need the same behavior.
