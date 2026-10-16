@@ -29,7 +29,7 @@ version=$(head -1 "$ROOT/lib/VERSION")
 
 check "release file says appliance-core $version" \
     "grep -qx 'APPLIANCE=\"appliance-core\"' /etc/appliance-core.release && grep -qx 'VERSION=\"$version\"' /etc/appliance-core.release"
-check "appliance-core-update status works" "appliance-core-update status | grep -q '^VERSION *$version'"
+check "appliance-core-update status works" "sudo appliance-core-update status | grep -q '^VERSION *$version'"
 check "provenance records the commit" "grep -q '^appliance-core-commit=[0-9a-f]\{40\}' /etc/appliance-core.provenance"
 check "vendored libs present and parse" "ls /usr/local/lib/appliance-core/*.sh | wc -l | grep -qv '^0\$' && for f in /usr/local/lib/appliance-core/*.sh; do bash -n \$f || exit 1; done"
 check "core-sconfig --status runs" "sudo core-sconfig --status"
@@ -50,14 +50,14 @@ if [[ -f "$bundle" ]]; then
     scp -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
         -i "${LAB_SSH_KEY:-$HOME/.ssh/id_ed25519}" "$bundle" "$bundle.sha256" "${LAB_VM_USER:-$USER}@$ip:/tmp/"
     b="/tmp/$(basename "$bundle")"
-    check "update bundle applies ($version -> $version.1)" "sudo appliance-core-update apply $b && appliance-core-update status | grep -q '^VERSION *$version.1'"
-    check "update history records both versions" "appliance-core-update history | grep -q '^$version.1@'"
-    check "rollback restores the files" "sudo appliance-core-update rollback && for f in /usr/local/lib/appliance-core/*.sh /usr/local/sbin/core-sconfig; do bash -n \$f || exit 1; done"
+    check "update bundle applies ($version -> $version.1)" "sudo appliance-core-update apply $b && sudo appliance-core-update status | grep -q '^VERSION *$version.1'"
+    check "update history records both versions" "sudo appliance-core-update history | grep -q '^$version.1@'"
+    check "rollback restores the files and version" "sudo appliance-core-update rollback && sudo appliance-core-update status | grep -q '^VERSION *$version\$' && for f in /usr/local/lib/appliance-core/*.sh /usr/local/sbin/core-sconfig; do bash -n \$f || exit 1; done"
     other=$("$ROOT/update/build-core-bundle.sh" --version "$version.2" --accepts "0.0.1" --out "$dist" 2>/dev/null | tail -1)
     scp -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
         -i "${LAB_SSH_KEY:-$HOME/.ssh/id_ed25519}" "$other" "$other.sha256" "${LAB_VM_USER:-$USER}@$ip:/tmp/"
     check "a bundle that doesn't accept this version is refused" \
-        "! sudo appliance-core-update apply /tmp/$(basename "$other") && appliance-core-update status | grep -q '^VERSION *$version\$'"
+        "! sudo appliance-core-update apply /tmp/$(basename "$other") && sudo appliance-core-update status | grep -q '^VERSION *$version\$'"
 else
     FAIL=$((FAIL + 1)); echo "FAIL could not build an update bundle"
 fi

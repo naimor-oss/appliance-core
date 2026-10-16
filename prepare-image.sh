@@ -367,8 +367,7 @@ HOSTNAME_SHORT=$(hostname -s 2>/dev/null || echo server)
 cat > /etc/motd <<MOTDEOF
 Debian 13 server (${HOSTNAME_SHORT})
 
-'sudo core-sconfig --status' shows this system's configuration;
-'appliance-core-update status' shows its release.
+'sudo core-sconfig --status' shows this system's configuration.
 
 Routine administration: 'man systemctl', 'man journalctl',
 'apt list --installed', etc.
