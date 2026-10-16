@@ -21,6 +21,8 @@
 #     identity for regression hunts (SemVer in /usr/local/lib/.../VERSION
 #     is documentation only).
 #   - core-sconfig at /usr/local/sbin/core-sconfig.
+#   - /etc/appliance-core.release and appliance-core-update, the same
+#     release identity and update bundles the product appliances use.
 #   - nftables ruleset installed but inactive.
 #   - MOTD scaffold in operator-neutral wording per CONTEXT.md.
 #
@@ -291,7 +293,7 @@ log "  vendored libs syntax-check passed: $(ls "$LIB_TARGET"/*.sh)"
 PROV_FILE=/etc/appliance-core.provenance
 log "Writing $PROV_FILE ..."
 # The commit hash is identity-of-the-source-tree, so it must be computed
-# WHERE THE SOURCE TREE LIVES — i.e. on the Mac during build, before the
+# WHERE THE SOURCE TREE LIVES — i.e. on the workstation during build, before the
 # tree is scp'd to the VM. Build pipeline passes it as $APPCORE_BUILD_COMMIT.
 # Adding `git` to the appliance just to hash a tree that isn't there
 # would be incidental complexity.
@@ -321,6 +323,40 @@ else
 fi
 
 #===============================================================================
+# 13b. RELEASE IDENTITY AND THE BUILT-IN UPDATER
+#===============================================================================
+# Same framework as the product appliances (docs/lib-update.md): the image
+# says what it is in /etc/appliance-core.release, and later changes arrive
+# as bundles from update/build-core-bundle.sh.
+log "Installing appliance-core-update and writing /etc/appliance-core.release ..."
+UPDATER_SRC=""
+for cand in /tmp/appliance-core-update "${SCRIPT_DIR}/appliance-core-update"; do
+    [[ -f "$cand" ]] && { UPDATER_SRC="$cand"; break; }
+done
+[[ -n "$UPDATER_SRC" ]] || { err "appliance-core-update not found next to prepare-image.sh"; exit 1; }
+install -m 0755 "$UPDATER_SRC" /usr/local/sbin/appliance-core-update
+printf '%s\n' "$PROV_COMMIT" > "$LIB_TARGET/COMMIT"
+(
+    # shellcheck disable=SC1091
+    source "$LIB_TARGET/kvstate.sh" && source "$LIB_TARGET/update.sh" || exit 1
+    built=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    version=$(head -1 "$LIB_TARGET/VERSION")
+    REL_APPLIANCE=appliance-core
+    REL_VERSION="$version"
+    REL_REPO_COMMIT="$PROV_COMMIT"
+    REL_APPCORE_VERSION="$version"
+    REL_APPCORE_COMMIT="$PROV_COMMIT"
+    REL_SAMBA_VERSION=""
+    REL_VFS_VERSION=""
+    REL_IMAGE_BUILT_AT="$built"
+    REL_LAST_UPDATE_AT=""
+    REL_MIGRATIONS=""
+    REL_HISTORY="${version}@${built}"
+    appcore_release_write /etc/appliance-core.release
+) || { err "could not write /etc/appliance-core.release"; exit 1; }
+log "  $(grep -E '^(VERSION|REPO_COMMIT)=' /etc/appliance-core.release | tr '\n' ' ')"
+
+#===============================================================================
 # 14. MOTD SCAFFOLD (operator-neutral)
 #===============================================================================
 # The login banner an operator sees has to read as a regular Debian
@@ -331,8 +367,8 @@ HOSTNAME_SHORT=$(hostname -s 2>/dev/null || echo server)
 cat > /etc/motd <<MOTDEOF
 Debian 13 server (${HOSTNAME_SHORT})
 
-Use 'sudo core-sconfig' for guided system configuration
-(network, hostname, timezone, updates, SSH keys).
+'sudo core-sconfig --status' shows this system's configuration;
+'appliance-core-update status' shows its release.
 
 Routine administration: 'man systemctl', 'man journalctl',
 'apt list --installed', etc.
@@ -391,5 +427,4 @@ log "=========================================="
 log " Vendored libs: $(ls "$LIB_TARGET"/*.sh 2>/dev/null | wc -l)"
 log " Provenance:    $(grep -h commit= "$PROV_FILE" 2>/dev/null)"
 log ""
-log " Next: snapshot the VM as 'deploy-master' (host-agnostic)."
-log " Then: boot once to fire core-firstboot (deferred), snapshot as 'golden-image'."
+log " Next: seal and publish the disk (lab/build-core-image.sh does both)."
