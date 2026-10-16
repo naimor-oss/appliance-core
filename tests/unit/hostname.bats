@@ -303,8 +303,8 @@ EOF
 align_mocks() {
     fake_cmd_args hostname '
 case "$1" in
-    -s) echo "mal-dc2" ;;
-    *)  echo "mal-dc2" ;;
+    -s) echo "dc2" ;;
+    *)  echo "dc2" ;;
 esac
 '
     fake_cmd_args ip '
@@ -336,20 +336,20 @@ esac
     # had before joining a different realm.
     cat > "$HOSTSFILE" <<EOF
 127.0.0.1 localhost
-10.10.10.42 mal-dc2.lab.test mal-dc2
+10.10.10.42 dc2.lab.test dc2
 EOF
 
     appcore_hostname_align_to_realm "corp.example.com"
 
     # hostnamectl received the new FQDN.
     grep -qx "set-hostname" "${FAKEBIN}/hostnamectl.argv"
-    grep -qx "mal-dc2.corp.example.com" "${FAKEBIN}/hostnamectl.argv"
+    grep -qx "dc2.corp.example.com" "${FAKEBIN}/hostnamectl.argv"
     # /etc/hostname carries the new FQDN.
-    grep -qx "mal-dc2.corp.example.com" "$HOSTNAMEFILE"
+    grep -qx "dc2.corp.example.com" "$HOSTNAMEFILE"
     # /etc/hosts now carries ONE line for our IP, pointing at the
     # NEW realm; the stale lab.test entry MUST have been stripped.
     cat "$HOSTSFILE"
-    grep -qE "^10\.10\.10\.42[[:space:]]+mal-dc2\.corp\.example\.com[[:space:]]+mal-dc2$" "$HOSTSFILE"
+    grep -qE "^10\.10\.10\.42[[:space:]]+dc2\.corp\.example\.com[[:space:]]+dc2$" "$HOSTSFILE"
     ! grep -qF "lab.test" "$HOSTSFILE"
 }
 
@@ -375,7 +375,7 @@ EOF
     appcore_hostname_align_to_realm "lab.test"
     appcore_hostname_align_to_realm "corp.example.com"
     # The /etc/hosts entry now carries the NEW realm, not the previous.
-    grep -qE "^10\.10\.10\.42[[:space:]]+mal-dc2\.corp\.example\.com[[:space:]]+mal-dc2$" "$HOSTSFILE"
+    grep -qE "^10\.10\.10\.42[[:space:]]+dc2\.corp\.example\.com[[:space:]]+dc2$" "$HOSTSFILE"
     ! grep -qF "lab.test" "$HOSTSFILE"
     # Exactly one line for our IP — no append.
     local n; n=$(grep -cE "^10\.10\.10\.42[[:space:]]" "$HOSTSFILE")
@@ -414,8 +414,8 @@ EOF
 @test "align_to_realm: fallback to first-global when default route is missing" {
     fake_cmd_args hostname '
 case "$1" in
-    -s) echo "mal-dc2" ;;
-    *)  echo "mal-dc2" ;;
+    -s) echo "dc2" ;;
+    *)  echo "dc2" ;;
 esac
 '
     # `ip -4 route get 1.1.1.1` prints nothing; the fallback kicks in.
@@ -432,7 +432,7 @@ esac
 127.0.0.1 localhost
 EOF
     appcore_hostname_align_to_realm "corp.example.com"
-    grep -qE "^10\.10\.10\.42[[:space:]]+mal-dc2\.corp\.example\.com[[:space:]]+mal-dc2$" "$HOSTSFILE"
+    grep -qE "^10\.10\.10\.42[[:space:]]+dc2\.corp\.example\.com[[:space:]]+dc2$" "$HOSTSFILE"
 }
 
 # ============================================================================
