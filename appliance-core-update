@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# appliance-core-update — the blank appliance's built-in updater
+# (docs/lib-update.md). Product appliances ship their own (<appliance>-update).
+#
+#   appliance-core-update status | history
+#   appliance-core-update apply appliance-core-update-X.Y.Z.tar.gz [--reinstall]
+#   appliance-core-update rollback [BACKUP_DIR]
+set -u
+LIB=/usr/local/lib/appliance-core
+# shellcheck disable=SC1091
+source "$LIB/kvstate.sh" 2>/dev/null && source "$LIB/update.sh" 2>/dev/null \
+    || { echo "appliance-core-update: update library missing in $LIB" >&2; exit 2; }
+appcore_update_cli appliance-core "$@"
